@@ -1,8 +1,8 @@
 #!/usr/bin/perl
-# ABSTRACT: POC for chitubox controller role
-our $VERSION = 'v1.0.7';
+# ABSTRACT: Multi-purpose chitubox controller
+our $VERSION = 'v2.0.2';
 
-##~ DIGEST : de58783fc2093223b644cd5adc0ba967
+##~ DIGEST : 341c34764244f013e70330534d981bd3
 use strict;
 use warnings;
 
@@ -12,12 +12,12 @@ use Moo;
 use Carp;
 use parent 'Moo::GenericRoleClass::CLI'; #provides  CLI, FileSystem, Common
 with qw/
-  Moo::GenericRole::DB::Working::AbstractSQLite
   Moo::GenericRole::ControlByGui
   Moo::GenericRole::ControlByGui::Chitubox
   Moo::GenericRole::FileIO::CSV
+  Moo::GenericRole::DB::Working::AbstractSQLite
+  /;                                     # AbstractSQLite is a wrapper class for all dbi actions
 
-  /;
 use Data::Dumper;
 use Image::OCR::Tesseract 'get_ocr';
 use Time::HiRes qw( usleep ualarm gettimeofday tv_interval nanosleep
@@ -117,87 +117,61 @@ sub process {
 	my ( $self, $res ) = @_;
 
 	given ( $res->{action} ) {
-		when ( $res->{action} eq 'full' ) {
-			$self->setup_working_db_copy( './stl_processing_template.sqlite' );
-			my $stack = $self->get_file_list( $res->{csv_file} );
-			for my $row ( @{$stack} ) {
-				my $dim = $self->get_single_file_project_dimensions( $row->{path} );
-				$self->expand_to_db( $row->{path}, $dim, $row->{count} );
-				sleep( 1 ); # required for chitubox reasons
-			}
 
-			#M4
-			#my $block_1 = {id => 1, x_dimension => 298.080 - 10, y_dimension => 165.600 - 10, margin => 1};
-			#M5
-			#my $block_1 = {id => 1, x_dimension => 82.620 - 15, y_dimension => 130.560 - 10, margin => 2};
+		# 		when ( $res->{action} eq 'full' ) {
+		# 			$self->setup_working_db_copy( './stl_processing_template.sqlite' );
+		# 			my $stack = $self->get_file_list( $res->{csv_file} );
+		# 			for my $row ( @{$stack} ) {
+		# 				my $dim = $self->get_single_file_project_dimensions( $row->{path} );
+		# 				$self->expand_to_db( $row->{path}, $dim, $row->{count} );
+		# 				sleep( 1 ); # required for chitubox reasons
+		# 			}
+		#
+		# 			my $row;
+		# 			do {
+		# 				$row = $self->query( "select *,rowid from files where state ='positioned' and id  =1 " )->fetchrow_hashref();
+		# 				last unless $row;
+		#
+		# 				#$self->import_and_position( $row->{file_path}, [ $row->{x_position} - ( $block_1->{x_dimension} / 2 ), $row->{y_position} - ( $block_1->{y_dimension} / 2 ) ] );
+		# 				$self->update(
+		# 					'files',
+		# 					{
+		# 						'state' => 'placed',
+		# 					},
+		# 					{
+		# 						rowid => $row->{rowid}
+		# 					}
+		# 				);
+		# 			} while ( $row );
+		#
+		# 		}
 
-			#$self->position_in_db( $self-> );
+		when ( $res->{action} eq 'import' ) {
 
-			my $row;
-			do {
-				$row = $self->query( "select *,rowid from files where state ='positioned' and id  =1 " )->fetchrow_hashref();
-				last unless $row;
-
-				#$self->import_and_position( $row->{file_path}, [ $row->{x_position} - ( $block_1->{x_dimension} / 2 ), $row->{y_position} - ( $block_1->{y_dimension} / 2 ) ] );
-				$self->update(
-					'files',
-					{
-						'state' => 'placed',
-					},
-					{
-						rowid => $row->{rowid}
-					}
-				);
-			} while ( $row );
+			$self->import_work_list( $res );
 
 		}
 
-		when ( $res->{action} eq 'import_csv_to_db' ) {
-			if ( $res->{db_file} ) {
-				$self->sqlite3_file_to_dbh( $res->{db_file} );
-			} else {
-				$self->setup_working_db_copy( './stl_processing_template.sqlite' );
-			}
-			my $stack = $self->get_file_list( $res->{csv_file} );
-			for my $row ( @{$stack} ) {
-				my $dim = $self->get_single_file_project_dimensions( $row->{path} );
-				$self->expand_to_db( $row->{path}, $dim, $row->{count} );
-				sleep( 1 ); # required for chitubox reasons
-			}
+		when ( $res->{action} eq 'dimensions' ) {
+			$self->get_outstanding_dimensions( $res );
 		}
 
-		when ( $res->{action} eq 'existing_db_allocate' ) {
-			$self->sqlite3_file_to_dbh( $res->{db_file} );
+		when ( $res->{action} eq 'allocate_single' ) {
+			$self->_do_db( $res );
 
 			for my $machine_id ( split( ',', $res->{machine_ids} ) ) {
 
-				$self->allocate_position_in_db_mk2( lc( $machine_id ), $res->{block_id} );
+				$self->allocate_position_in_db_mk2( lc( $machine_id ), $res->{project_id} );
 			}
 		}
 
-		when ( $res->{action} eq 'existing_db_place' ) {
-			$self->sqlite3_file_to_dbh( $res->{db_file} );
+		when ( $res->{action} eq 'place' ) {
+			$self->_do_db( $res );
 			$self->place_stl_rows( lc( $res->{block_id} ) );
 		}
 
-		when ( $res->{action} eq 'export_rotate' ) {
-			my $stack = $self->get_file_list( $res->{csv_file} );
-			die Dumper( $stack );
-			for my $row ( @{$stack} ) {
-				$self->import_support_export_file(
-					$row->{path},
-					{
-						pre_supports_sub => sub {
-							$self->rotate_file_corner();
-						}
-					}
-				);
-				$self->click_to( 'delete' );
-			}
-		}
-		when ( $res->{action} eq 'export_plate' ) {
-			$self->export_plate_as_single_files( $res->{dir_target} );
-
+		when ( $res->{action} eq 'export' ) {
+			$self->export_plate_as_single_file_projects( $res->{dir_target} );
 		}
 
 		default {
@@ -208,7 +182,77 @@ sub process {
 
 }
 
-sub export_plate_as_single_files {
+sub _do_db {
+	my ( $self, $res ) = @_;
+	if ( $res->{db_file} ) {
+		$self->sqlite3_file_to_dbh( $res->{db_file} );
+	} else {
+
+		#$self->setup_working_db_copy( './working_db.sqlite' );
+		$self->sqlite3_file_to_dbh( './working_db.sqlite' );
+	}
+}
+
+sub import_work_list {
+	my ( $self, $res ) = @_;
+	$self->_do_db( $res );
+	my $stack = $self->get_file_list( $res->{csv_file} );
+	my $project_id;
+	if ( $res->{project_id} ) {
+		$project_id = $res->{project_id};
+	} else {
+		$project_id = time;
+		warn "no project id provided, set to [$project_id]";
+	}
+	for my $project_row_href ( @{$stack} ) {
+
+		#print "processing $project_row_href->{path}$/";
+		my $file_row = $self->select( 'files', [qw/* rowid/], {file_path => $project_row_href->{path}} )->fetchrow_hashref;
+		unless ( $file_row ) {
+			$self->insert( 'files', {file_path => $project_row_href->{path}} );
+			$file_row = $self->select( 'files', '*', {file_path => $project_row_href->{path}} )->fetchrow_hashref;
+		}
+
+		while ( $project_row_href->{count} ) {
+
+			$self->insert(
+				'projects',
+				{
+					file_id => $file_row->{rowid},
+					project => $project_id
+				}
+			);
+			$project_row_href->{count}--;
+		}
+	}
+}
+
+#Open each .chitubox file in the file list that has not yet had dimensions set, and record them
+sub get_outstanding_dimensions {
+	my ( $self, $res ) = @_;
+	$self->_do_db( $res );
+	while ( my $file_row = $self->select( 'files', [qw/* rowid/], {x_dimension => undef} )->fetchrow_hashref() ) {
+
+		#die "working on $file_row->{file_path}";
+		my $dim = $self->get_single_file_project_dimensions( $file_row->{file_path} );
+		$self->update(
+			'files',
+			{
+				x_dimension => $dim->[0],
+				y_dimension => $dim->[1],
+			},
+			{
+				rowid => $file_row->{rowid}
+			}
+		);
+	}
+}
+
+=head2 export_plate_as_single_file_projects
+	export a working plate with multiple projects as multiple individual projects - these are the items to actually print 
+=cut
+
+sub export_plate_as_single_file_projects {
 	my ( $self, $out_dir, $p ) = @_;
 	unless ( $out_dir ) {
 		print "Output directory defaulting to ./";
@@ -260,7 +304,7 @@ sub export_plate_as_single_files {
 
 }
 
-#turn csv file into instruction list
+#turn csv file into <number> <filepath>
 sub get_file_list {
 	my ( $self, $csv_file ) = @_;
 	my @stack;
@@ -293,125 +337,12 @@ sub get_file_list {
 
 }
 
-sub expand_to_db {
-	my ( $self, $string, $xy, $multiple ) = @_;
-	while ( $multiple ) {
-
-		$self->insert(
-			'files',
-			{
-				file_path   => $string,
-				x_dimension => $xy->[0],
-				y_dimension => $xy->[1],
-				x_position  => undef,
-				y_position  => undef,
-			}
-		);
-		$multiple--;
-	}
-	$self->dbh->commit();
-}
-
-#record top left start absolute positions in the DB to be translated as requried
-sub allocate_position_in_db {
-	my ( $self, $machine_id, $opt ) = @_;
-
-	my $row;
-	my $this_machine = $self->{machine_definitions}->{$machine_id};
-	die "Machine [$machine_id] not found" unless $this_machine;
-	THISBLOCK: {
-		my $this_band = {
-			xc => 0,
-			yc => 0,
-			yn => 0,
-		};
-		do {
-			$row = $self->query( "select *,rowid from files where state is null order by x_dimension desc, y_dimension desc limit 1" )->fetchrow_hashref();
-			if ( $row ) {
-
-				#can this object fit in the x axis?
-				my $this_x_start = $this_band->{xc};
-				my $this_x_end   = $this_x_start + $row->{x_dimension} + $this_machine->{margin};
-
-				#where should this object start from ?
-				my $this_y_start = $this_band->{yc};
-
-				#is this object's y bigger than any previous on this band?
-				my $this_y_end = $this_band->{yc} + $row->{y_dimension} + $this_machine->{margin};
-				if ( $this_y_end > $this_band->{yn} ) {
-					warn "extending Y band : $this_y_end > $this_band->{yn}";
-					$this_band->{yn} = $this_y_end;
-				}
-
-				if ( $this_x_end >= $this_machine->{x_dimension} ) {
-					if ( $this_y_end >= $this_machine->{y_dimension} ) {
-
-						#no more space
-						last THISBLOCK;
-					} else {
-						warn "new x band with $this_x_end";
-
-						#reset calculations for new row
-						$this_x_start = 0;
-						$this_x_end   = $this_x_start + $row->{x_dimension} + $this_machine->{margin};
-
-						$this_y_start = $this_y_end;
-						$this_y_end   = $this_y_start + $row->{y_dimension} + $this_machine->{margin};
-
-						$this_band = {
-							xc => $this_x_end,
-							yc => $this_y_start,
-							yn => $this_y_end
-						};
-					}
-
-				} else {
-
-					#set the starting point for the next object on x axis
-					$this_band->{xc} = $this_x_end;
-				}
-
-				#get the middle x position
-				my $x_mid = $this_x_start + ( ( $row->{x_dimension} + $this_machine->{margin} ) / 2 );
-
-				#get the middle y position
-				my $y_mid = $this_y_start + ( ( $row->{y_dimension} + $this_machine->{margin} ) / 2 );
-
-				$self->update(
-					'files',
-					{
-						'state'    => 'positioned',
-						x_position => $x_mid,
-						y_position => $y_mid,
-						id         => $this_machine->{id}
-					},
-					{
-						rowid => $row->{rowid}
-					}
-				);
-
-			} else {
-				warn "no row";
-			}
-		} while ( $row );
-	}
-	my $sum_row = $self->query( "select count(*) as count from files where state is null " )->fetchrow_arrayref();
-	if ( $sum_row ) {
-		my $count = $sum_row->[0];
-		print $/ . "[$count] Items remaining that have not been placed$/";
-	}
-	return 0;
-}
-
-#record top left start absolute positions in the DB to be translated as requried
+#calculate and assign the band box middle positions for every object that will fit on a given plate starting from bottom left
 sub allocate_position_in_db_mk2 {
-	my ( $self, $machine_id, $block_id, $opt ) = @_;
+	my ( $self, $machine_id, $project_id, $opt ) = @_;
+
 	die "Machine ID not provided" unless $machine_id;
-	unless ( $block_id ) {
-		warn "No explicit block ID provided - defaulting to machine id [$machine_id]";
-		sleep( 1 );
-		$block_id = $machine_id;
-	}
+	die "Project ID not provided" unless $project_id;
 
 	my $this_machine = $self->{machine_definitions}->{$machine_id};
 	die "Machine [$machine_id] not found" unless $this_machine;
@@ -424,22 +355,42 @@ sub allocate_position_in_db_mk2 {
 	my $next_y_cursor   = 0;
 	my $x_space         = $this_machine->{x_dimension};
 	my $y_space         = $this_machine->{y_dimension};
-	my $get_row_sth     = $self->dbh->prepare( 'select *, rowid from files where state is null and x_dimension <= ? and y_dimension <= ? order by x_dimension desc, y_dimension desc limit 1' );
+	my $get_row_sth     = $self->dbh->prepare( '
+		select 
+			f.file_path,
+			f.x_dimension ,
+			f.y_dimension, 
+			p.rowid
+		from files f 
+		join projects p 
+			on f.rowid = p.file_id 
+		where 
+			project_block is null
+			and f.x_dimension <= ?
+			and f.y_dimension <= ?
+			and project = ? 
+		order by 
+			f.x_dimension desc, 
+			f.y_dimension desc 
+		limit 1' );
 
 	while ( 1 ) {
-		$get_row_sth->execute( $x_space - $combined_margin, $y_space - $combined_margin );
+		$get_row_sth->execute( $x_space - $combined_margin, $y_space - $combined_margin, $project_id );
+
 		$row = $get_row_sth->fetchrow_hashref();
 
 		unless ( $row ) {
+
 			$y_cursor = $next_y_cursor;
 			$y_space  = $this_machine->{y_dimension} - $next_y_cursor;
 			$x_cursor = 0;
 			$x_space  = $this_machine->{x_dimension};
 
-			$get_row_sth->execute( $x_space - $combined_margin, $y_space - $combined_margin );
+			$get_row_sth->execute( $x_space - $combined_margin, $y_space - $combined_margin, $project_id );
+
 			$row = $get_row_sth->fetchrow_hashref();
 			unless ( $row ) {
-				print "No more space on plate for available objects$/";
+				print "No objects available for remaining space$/";
 				last;
 			}
 		}
@@ -461,12 +412,13 @@ sub allocate_position_in_db_mk2 {
 		$x_space  = $this_machine->{x_dimension} - $x_cursor;
 
 		$self->update(
-			'files',
+			'projects',
 			{
-				'state'    => 'positioned',
-				x_position => $x_midpoint,
-				y_position => $y_midpoint,
-				id         => $block_id
+				'state'       => 'positioned',
+				x_position    => $x_midpoint,
+				y_position    => $y_midpoint,
+				machine       => $machine_id,
+				project_block => -1
 			},
 			{
 				rowid => $row->{rowid}
@@ -474,30 +426,55 @@ sub allocate_position_in_db_mk2 {
 		);
 
 	}
-
-	my $sum_row = $self->query( "select count(*) as count from files where state is null " )->fetchrow_arrayref();
-	if ( $sum_row ) {
-		my $count = $sum_row->[0];
-		print $/ . "[$count] Items remaining that have not been placed$/";
+	my $sum_row = $self->query( "select max(project_block) from projects " )->fetchrow_arrayref();
+	my $max     = $sum_row->[0];
+	if ( $max <= 0 ) {
+		$max = 1;
+	} else {
+		$max++;
 	}
+
+	$self->query( "update projects set project_block = ? where project_block = -1", $max );
+	my $assigned_row  = $self->query( "select count(*) as count from projects where project_block = ? ",                     $max )->fetchrow_arrayref();
+	my $remaining_row = $self->query( "select count(*) as count from projects where project_block is null and project = ? ", $project_id )->fetchrow_arrayref();
+	print "$/\tPlaced [$assigned_row->[0]] Items$/\t[$remaining_row->[0]] Items remaining that have not been placed$/";
 	return 0;
 }
 
+#from the db positions, actually interact with chitubox to place them
 sub place_stl_rows {
-	my ( $self, $label ) = @_;
-	die "label not provided " unless $label;
-	my $this_machine = $self->{machine_definitions}->{$label};
+	my ( $self, $project_block ) = @_;
+	die "Project ID not provided" unless $project_block;
+	my $machine_row = $self->query( "select machine from projects where project_block = ? limit 1 ", $project_block )->fetchrow_arrayref();
+	die "Machine for project block [$project_block] not found" unless $machine_row;
+	my $this_machine = $self->{machine_definitions}->{$machine_row->[0]};
+	die "Machine [$machine_row->[0]] not found" unless $this_machine;
 	my $row;
 	do {
-		$row = $self->query( "select *,rowid from files where state ='positioned' and id  =? ", $label )->fetchrow_hashref();
+		$row = $self->query(
+			"select 
+			f.file_path,
+			f.x_dimension ,
+			f.y_dimension, 
+			p.x_position ,
+			p.y_position, 
+			p.rowid
+		from files f 
+		join projects p 
+			on f.rowid = p.file_id 
+		where 
+			state ='positioned'
+			and project_block  =? ", $project_block
+		)->fetchrow_hashref();
+
 		unless ( $row ) {
-			print "No positioned items found for [$label]";
+			print "No positioned items found for [$project_block]";
 			return;
 		}
 
-		$self->import_and_position( $row->{file_path}, [ $row->{x_position} - ( $this_machine->{x_dim ension} / 2 ), $row->{y_position} - ( $this_machine->{y_dimension} / 2 ) ] );
+		$self->import_and_position( $row->{file_path}, [ ( $row->{x_position} - ( $this_machine->{x_dimension} / 2 ) ) + $this_machine->{x_offset} || 0, ( $row->{y_position} - ( $this_machine->{y_dimension} / 2 ) ) + $this_machine->{y_offset} || 0 ] );
 		$self->update(
-			'files',
+			'projects',
 			{
 				'state' => 'placed',
 			},
@@ -506,7 +483,7 @@ sub place_stl_rows {
 			}
 		);
 	} while ( $row );
-	print "Finished positioning [$label]";
+	print "Finished positioning items in [$project_block]";
 	return;
 }
 
@@ -566,16 +543,16 @@ sub main {
 	my $res = $self->get_config(
 		[
 			qw/
-
-			/
+			  action
+			  /
 		],
 		[
 			qw/
-			  action
 			  csv_file
 			  db_file
 			  machine_ids
 			  block_id
+			  project_id
 			  dir_target
 			  /
 		],
@@ -584,7 +561,6 @@ sub main {
 			optional => {}
 		}
 	);
-	warn Dumper( $res );
 	$self->process( $res );
 
 }
