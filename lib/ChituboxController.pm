@@ -1,12 +1,12 @@
 #!/usr/bin/perl
 # ABSTRACT: Multi-purpose chitubox controller
-our $VERSION = 'v2.0.3';
+our $VERSION = 'v2.2.2';
 
-##~ DIGEST : 1511b278eb2c7fb23532f13e7e6779d9
+##~ DIGEST : d12d9ae619015eb7baca26d15b3b32a1
 use strict;
 use warnings;
 
-package ThisObj;
+package ChituboxController;
 use v5.10;
 use Moo;
 use Carp;
@@ -53,7 +53,7 @@ around "new" => sub {
 			'light_supports'    => [ 1815, 260 ],
 			'add_supports'      => [ 1860, 780 ],
 
-			#
+			#???
 			'main_settings' => [ 1710, 125 ],
 			'delete'        => [ 1905, 185 ],
 
@@ -66,6 +66,7 @@ around "new" => sub {
 			scale_button => [ 20,  530 ],
 			x_dim        => [ 110, 585 ],
 			y_dim        => [ 110, 620 ],
+			z_dim        => [ 110, 650 ],
 
 			#positioning
 			move_button => [ 20,   360 ],
@@ -80,6 +81,15 @@ around "new" => sub {
 			'second_object' => [ 1633, 275 ],
 			'delete_object' => [ 1900, 200 ],
 
+			#slice & export
+			'slice_button' => [ 1700, 700 ],
+			'slice_save'   => [ 1780, 560 ],
+			'slice_back'   => [ 1780, 770 ],
+
+			#Machine selection
+			'print_settings'       => [ 1750, 620 ],
+			'close_print_settings' => [ 1500, 240 ],
+
 		}
 	);
 
@@ -92,22 +102,63 @@ around "new" => sub {
 				xclip_file_path        => '#AFAFAF',
 				highlighted_in_objects => '#56C3FF', # >:(
 			},
-			dimensions => {
-
-				#mm
-				'x' => '82',
-				'y' => '130',
-				'z' => '160',
-			},
-			margin => 2,
 		}
 	);
 
-	#TODO: offsets
+	#offsets are the printing offset values to mask screen problems as defined in the printer setting
 	$self->{machine_definitions} = {
-		'm5' => {id => 'm5', x_dimension => 78, y_dimension => 126, margin => 1},
-		'm7' => {id => 'm5', x_dimension => 69, y_dimension => 122, margin => 1},
-		'm1' => {id => 'm1', x_dimension => 77, y_dimension => 82,  margin => 1},
+
+		'm0' => {
+			id              => 'm1',
+			x_dimension     => 77,
+			y_dimension     => 82,
+			margin          => 1,
+			menu_y_position => 165,
+
+			#x_offset => 2,   y_offset => 40
+		},
+		'm5' => {
+			id              => 'm5',
+			x_dimension     => 78,
+			y_dimension     => 126,
+			margin          => 1,
+			menu_y_position => 215,
+
+			#x_offset => 1.5, y_offset => .2
+		},
+
+		'm7' => {
+			id              => 'm5',
+			x_dimension     => 69,
+			y_dimension     => 122,
+			margin          => 1,
+			menu_y_position => 285,
+
+			#x_offset => 3,   y_offset => 3
+		},
+		'm1' => {
+			id              => 'm1',
+			x_dimension     => 75,
+			y_dimension     => 82,
+			margin          => 1,
+			menu_y_position => 335,
+
+			#'A' and 'D' in the offset menu?
+			x_offset => 0,
+			y_offset => 18
+		},
+
+		#This probably should not be used for automation
+		'm4' => {
+			id              => 'm4',
+			x_dimension     => 192.004,
+			y_dimension     => 120,
+			margin          => 1,
+			menu_y_position => 495,
+
+			#x_offset => 1.5, y_offset => .2
+		},
+
 	};
 	return $self;
 
@@ -170,6 +221,8 @@ sub process {
 			$self->place_stl_rows( lc( $res->{block_id} ) );
 		}
 
+		#TODO: hard_place - force the specific machine for given project id
+
 		when ( $res->{action} eq 'export' ) {
 			$self->export_plate_as_single_file_projects( $res->{dir_target} );
 		}
@@ -184,6 +237,7 @@ sub process {
 
 sub _do_db {
 	my ( $self, $res ) = @_;
+	$res ||= {};
 	if ( $res->{db_file} ) {
 		$self->sqlite3_file_to_dbh( $res->{db_file} );
 	} else {
@@ -201,8 +255,8 @@ sub import_work_list {
 	if ( $res->{project_id} ) {
 		$project_id = $res->{project_id};
 	} else {
-		$project_id = time;
-		warn "no project id provided, set to [$project_id]";
+		$project_id = "default";
+		Carp::cluck( "no project id provided for import_work_list; set to [$project_id]" );
 	}
 	for my $project_row_href ( @{$stack} ) {
 
@@ -210,7 +264,7 @@ sub import_work_list {
 		my $file_row = $self->select( 'files', [qw/* rowid/], {file_path => $project_row_href->{path}} )->fetchrow_hashref;
 		unless ( $file_row ) {
 			$self->insert( 'files', {file_path => $project_row_href->{path}} );
-			$file_row = $self->select( 'files', '*', {file_path => $project_row_href->{path}} )->fetchrow_hashref;
+			$file_row = $self->select( 'files', [qw/* rowid/], {file_path => $project_row_href->{path}} )->fetchrow_hashref;
 		}
 
 		while ( $project_row_href->{count} ) {
@@ -240,6 +294,7 @@ sub get_outstanding_dimensions {
 			{
 				x_dimension => $dim->[0],
 				y_dimension => $dim->[1],
+				z_dimension => $dim->[2],
 			},
 			{
 				rowid => $file_row->{rowid}
@@ -360,14 +415,18 @@ sub allocate_position_in_db_mk2 {
 			f.file_path,
 			f.x_dimension ,
 			f.y_dimension, 
-			p.rowid
+			p.rowid,
+			p.file_id
 		from files f 
 		join projects p 
 			on f.rowid = p.file_id 
 		where 
 			project_block is null
-			and f.x_dimension <= ?
-			and f.y_dimension <= ?
+			and (
+					(f.x_dimension <= ? and f.y_dimension <= ?)
+				or
+					(f.y_dimension <= ? and f.x_dimension <= ?)
+			)
 			and project = ? 
 		order by 
 			f.x_dimension desc, 
@@ -375,38 +434,57 @@ sub allocate_position_in_db_mk2 {
 		limit 1' );
 
 	while ( 1 ) {
-		$get_row_sth->execute( $x_space - $combined_margin, $y_space - $combined_margin, $project_id );
+		my $available_x = $x_space - $combined_margin;
+		my $available_y = $y_space - $combined_margin;
+		print "\tSeeking with [$available_x,$available_y]$/";
+		$get_row_sth->execute( $available_x, $available_y, $available_x, $available_y, $project_id );
 
 		$row = $get_row_sth->fetchrow_hashref();
 
 		unless ( $row ) {
 
-			$y_cursor = $next_y_cursor;
-			$y_space  = $this_machine->{y_dimension} - $next_y_cursor;
-			$x_cursor = 0;
-			$x_space  = $this_machine->{x_dimension};
-
-			$get_row_sth->execute( $x_space - $combined_margin, $y_space - $combined_margin, $project_id );
+			$y_cursor    = $next_y_cursor;
+			$y_space     = $this_machine->{y_dimension} - $next_y_cursor;
+			$x_cursor    = 0;
+			$x_space     = $this_machine->{x_dimension};
+			$available_x = $x_space - $combined_margin;
+			$available_y = $y_space - $combined_margin;
+			print "\t\tRe-seeking with [$available_x,$available_y]$/";
+			$get_row_sth->execute( $available_x, $available_y, $available_x, $available_y, $project_id );
 
 			$row = $get_row_sth->fetchrow_hashref();
 			unless ( $row ) {
-				print "No objects available for remaining space$/";
+				print "\t\tNo objects available for remaining space of [$available_x, $available_y]$/";
 				last;
 			}
 		}
 
-		#'band' here signifiying axis aligned band box
+		#did we find something that's best rotated
+		my ( $new_x, $new_y, $rotate );
+		if ( $row->{x_dimension} > $available_x ) {
+			warn "Rotated $row->{rowid}";
+			$new_x  = $row->{y_dimension};
+			$new_y  = $row->{x_dimension};
+			$rotate = 90;
+		} else {
+			$new_x = $row->{x_dimension};
+			$new_y = $row->{y_dimension};
 
-		my $x_band_end = $x_cursor + $combined_margin + $row->{x_dimension};
-		my $y_band_end = $y_cursor + $combined_margin + $row->{y_dimension};
+		}
+
+		#'band' here signifying axis aligned band box
+		my $x_band_end = $x_cursor + $combined_margin + $new_x;
+		my $y_band_end = $y_cursor + $combined_margin + $new_y;
 
 		#if this object is somehow taller than those before, adjust the future cursor accordingly
 		if ( $y_band_end > $next_y_cursor ) {
-			warn "adjusting future Y cursor minimum from [$next_y_cursor] to [$y_band_end]";
+			print "\tadjusting future Y cursor minimum from [$next_y_cursor] to [$y_band_end]$/";
 			$next_y_cursor = $y_band_end;
 		}
+
 		my $x_midpoint = ( $x_cursor + $x_band_end ) / 2;
 		my $y_midpoint = ( $y_cursor + $y_band_end ) / 2;
+		print "\tPlaced file # [$row->{file_id}] which is [$new_x,$new_y] at [$x_midpoint,$y_midpoint]$/";
 
 		$x_cursor = $x_band_end;
 		$x_space  = $this_machine->{x_dimension} - $x_cursor;
@@ -417,6 +495,7 @@ sub allocate_position_in_db_mk2 {
 				'state'       => 'positioned',
 				x_position    => $x_midpoint,
 				y_position    => $y_midpoint,
+				rotate        => $rotate,
 				machine       => $machine_id,
 				project_block => -1
 			},
@@ -450,6 +529,10 @@ sub place_stl_rows {
 	my $this_machine = $self->{machine_definitions}->{$machine_row->[0]};
 	die "Machine [$machine_row->[0]] not found" unless $this_machine;
 	my $row;
+
+	my $this_machine_x_zero = ( $this_machine->{x_dimension} / 2 ) + $this_machine->{x_offset};
+	my $this_machine_y_zero = ( $this_machine->{y_dimension} / 2 ) + $this_machine->{y_offset};
+	print "\tPlacing on $machine_row->[0] with zero point modifiers [$this_machine_x_zero,$this_machine_y_zero]$/";
 	do {
 		$row = $self->query(
 			"select 
@@ -468,11 +551,16 @@ sub place_stl_rows {
 		)->fetchrow_hashref();
 
 		unless ( $row ) {
-			print "No positioned items found for [$project_block]";
+			print "No positioned items found for [$project_block] on machine [$machine_row->[0]]";
 			return;
 		}
+		print "\tPlacing with original position of [$row->{x_position},$row->{y_position}]$/";
+		$self->import_and_position(
+			$row->{file_path},
 
-		$self->import_and_position( $row->{file_path}, [ ( $row->{x_position} - ( $this_machine->{x_dimension} / 2 ) ) + $this_machine->{x_offset} || 0, ( $row->{y_position} - ( $this_machine->{y_dimension} / 2 ) ) + $this_machine->{y_offset} || 0 ] );
+			#offsets such as the necessary for M1 are to move the 0 point around as it's always in the middle of the nominal center of the plate otherwise
+			[ ( $row->{x_position} - $this_machine_x_zero ), ( $row->{y_position} - $this_machine_y_zero ) ]
+		);
 		$self->update(
 			'projects',
 			{
@@ -531,37 +619,60 @@ sub object_stack_to_bands {
 	return \@return;
 }
 
-1;
+sub slice_and_save {
+	my ( $self, $project_block, $p ) = @_;
+	$p ||= {};
+	my $project_row = $self->query( "select * from projects where project_block = ? ", $project_block )->fetchrow_hashref();
+	die "project row not found" unless $project_row;
 
-package main;
-use Data::Dumper;
-main();
+	$self->wait_for_progress_bar();
+	$self->click_to( 'slice_button' );
+	$self->wait_for_progress_bar();
+	$self->click_to( 'slice_save' );
+	my $project_string = join( '_', ( $project_row->{project}, uc( $project_row->{machine} ), 'P' . uc( $project_row->{project_block} ), ) );
+	my $o_dir;
+	unless ( $p->{o_dir} ) {
+		require FindBin;
+		$o_dir = $FindBin::Bin;
+	}
 
-sub main {
-	my $self = ThisObj->new();
+	my $o_path = "$o_dir/$project_string.chitubox";
+	if ( -e $o_path ) {
+		print "[$o_path] already exists!";
+	}
+	$o_path = $self->safe_duplicate_path( $o_path );
+	print "$/\tsaving to $o_path$/";
+	$self->type_enter( $o_path );
+	sleep( 3 );
+	$self->wait_for_progress_bar();
+	my $measure_path = "$o_dir/$project_string.png";
+	unlink( $measure_path ) if -e $measure_path;
+	print `import -window root -quality 95 -compress none -negate -crop 330x225+1650+235 $measure_path`;
+	$self->click_to( 'slice_back' );
+}
 
-	my $res = $self->get_config(
-		[
-			qw/
-			  action
-			  /
-		],
-		[
-			qw/
-			  csv_file
-			  db_file
-			  machine_ids
-			  block_id
-			  project_id
-			  dir_target
-			  /
-		],
-		{
-			required => {},
-			optional => {}
-		}
-	);
-	$self->process( $res );
+sub machine_select {
+	my ( $self, $machine_id, $p ) = @_;
+	$p ||= {};
+	$self->wait_for_progress_bar();
+	$self->click_to( 'print_settings' );
+	my $this_machine = $self->{machine_definitions}->{$machine_id};
+	die "Machine [$machine_id] not found" unless $this_machine;
+	print "$/\t Selecting [$machine_id]";
+	$self->move_to( [ 450, 225 + $this_machine->{menu_y_position} ] );
+	$self->click();
+	sleep( 1 ); #loading time non-trivial
+	$self->click_to( 'close_print_settings' );
 
 }
+
+sub clear_plate {
+	my ( $self ) = @_;
+	unless ( $self->if_colour_name_at_named( 'select_all_on', 'select_all' ) ) {
+		$self->click_to( 'select_all' );
+	}
+	$self->click_to( 'delete_object' );
+	$self->wait_for_progress_bar();
+}
+
 1;

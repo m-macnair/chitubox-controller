@@ -1,8 +1,8 @@
 # ABSTRACT : Module for interacting with Chitubox using ControlByGui
 package Moo::GenericRole::ControlByGui::Chitubox;
-our $VERSION = 'v0.0.2';
+our $VERSION = 'v0.0.3';
 
-##~ DIGEST : c1b5a4b9a5253b0e803dd1269da56a0f
+##~ DIGEST : f623e861cbc220ab3f53d0a14a4cc94f
 use strict;
 use Moo::Role;
 use 5.006;
@@ -97,8 +97,8 @@ sub get_single_file_project_dimensions {
 
 	print "working on $file $/";
 	my ( $name, $dir, $suffix ) = $self->file_parse( $file );
-	unless ( first { /$suffix/ } qw/ .chitubox / ) {
-		confess "[$file] is not a Chitubox project";
+	unless ( first { /$suffix/ } qw/ .chitubox .stl .obj/ ) {
+		confess "[$file] is not a compatible file";
 	}
 
 	#TODO test openfile
@@ -116,11 +116,14 @@ sub get_single_file_project_dimensions {
 	$self->click_to( 'y_dim' );
 	my $y = $self->return_text();
 
+	$self->click_to( 'z_dim' );
+	my $z = $self->return_text();
+
 	$self->click_to( 'delete' );
 
 	#close the scale menu
 	$self->click_to( 'scale_button' );
-	return [ $x, $y ];
+	return [ $x, $y, $z ];
 
 }
 
