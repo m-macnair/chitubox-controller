@@ -1,8 +1,8 @@
 # ABSTRACT : Module for interacting with Chitubox using ControlByGui
 package Moo::GenericRole::ControlByGui::Chitubox;
-our $VERSION = 'v0.0.3';
+our $VERSION = 'v0.0.4';
 
-##~ DIGEST : f623e861cbc220ab3f53d0a14a4cc94f
+##~ DIGEST : fea34924731b741d15a28c542021152f
 use strict;
 use Moo::Role;
 use 5.006;
@@ -50,16 +50,17 @@ sub place_stl {
 }
 
 sub import_and_position {
-	my ( $self, $file, $xy ) = @_;
-	warn "Placing \n\t$file \n at\n\t$xy->[0],$xy->[1]\n";
+	my ( $self, $file, $xy, $rotate ) = @_;
+	$rotate ||= 0;
+	print "\tPlacing\n\t[$file]\n\t[ $xy->[0],$xy->[1]] rotating [$rotate]\n";
 	$self->open_file( $file );
 
 	my $colour = $self->get_colour_at_coordinates( $self->ControlByGui_coordinate_map->{select_all} );
 	if ( $colour eq $self->ControlByGui_values->{colour}->{select_all_on} ) {
-		print "Select all detected - disabling$/";
+		print "\tSelect all detected - disabling$/";
 		$self->click_to( 'select_all' );
 	}
-
+	$self->click_to( 'scale_button' );
 	$self->click_to( 'move_button' );
 	$self->click_to( 'x_pos' );
 	$self->xdo_key( 'BackSpace' );
@@ -72,6 +73,16 @@ sub import_and_position {
 
 	#close the menu
 	$self->click_to( 'move_button' );
+
+	if ( $rotate ) {
+		$self->click_to( 'rotate_menu' );
+		$self->click_to( 'z_rot' );
+
+		$self->xdo_key( 'BackSpace' );
+		$self->type_enter( " $rotate" );
+		$self->click_to( 'rotate_menu' );
+
+	}
 }
 
 sub position_selected {
