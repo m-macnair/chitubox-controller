@@ -1,8 +1,8 @@
 # ABSTRACT : Module for interacting with Chitubox using ControlByGui
 package Moo::GenericRole::ControlByGui::Chitubox;
-our $VERSION = 'v0.0.2';
+our $VERSION = 'v0.0.5';
 
-##~ DIGEST : c1b5a4b9a5253b0e803dd1269da56a0f
+##~ DIGEST : abc02fba6923905323cf79637ba5dc09
 use strict;
 use Moo::Role;
 use 5.006;
@@ -50,14 +50,26 @@ sub place_stl {
 }
 
 sub import_and_position {
-	my ( $self, $file, $xy ) = @_;
-	warn "Placing \n\t$file \n at\n\t$xy->[0],$xy->[1]\n";
+	my ( $self, $file, $xy, $rotate ) = @_;
+	$rotate ||= 0;
+	print "\tPlacing\n\t[$file]\n\t[ $xy->[0],$xy->[1]] rotating [$rotate]\n";
 	$self->open_file( $file );
 
 	my $colour = $self->get_colour_at_coordinates( $self->ControlByGui_coordinate_map->{select_all} );
 	if ( $colour eq $self->ControlByGui_values->{colour}->{select_all_on} ) {
-		print "Select all detected - disabling$/";
+		print "\tSelect all detected - disabling$/";
 		$self->click_to( 'select_all' );
+	}
+	$self->click_to( 'scale_button' );
+
+	#rotate first as chitubox can change the center point
+	if ( $rotate ) {
+		$self->click_to( 'rotate_menu' );
+		$self->click_to( 'z_rot' );
+
+		$self->xdo_key( 'BackSpace' );
+		$self->type_enter( " $rotate" );
+		$self->click_to( 'rotate_menu' );
 	}
 
 	$self->click_to( 'move_button' );
@@ -72,6 +84,7 @@ sub import_and_position {
 
 	#close the menu
 	$self->click_to( 'move_button' );
+
 }
 
 sub position_selected {
@@ -97,8 +110,8 @@ sub get_single_file_project_dimensions {
 
 	print "working on $file $/";
 	my ( $name, $dir, $suffix ) = $self->file_parse( $file );
-	unless ( first { /$suffix/ } qw/ .chitubox / ) {
-		confess "[$file] is not a Chitubox project";
+	unless ( first { /$suffix/ } qw/ .chitubox .stl .obj/ ) {
+		confess "[$file] is not a compatible file";
 	}
 
 	#TODO test openfile
@@ -109,6 +122,16 @@ sub get_single_file_project_dimensions {
 
 	$self->wait_for_progress_bar();
 	sleep( 1 );
+	my $ref = $self->get_current_dimensions();
+	$self->click_to( 'delete' );
+	return $ref;
+
+}
+
+sub get_current_dimensions {
+	my ( $self ) = @_;
+
+	$self->click_to( 'mirror_button' ); # clear any previous menu
 	$self->click_to( 'scale_button' );
 	$self->click_to( 'x_dim' );
 	my $x = $self->return_text();
@@ -116,11 +139,12 @@ sub get_single_file_project_dimensions {
 	$self->click_to( 'y_dim' );
 	my $y = $self->return_text();
 
-	$self->click_to( 'delete' );
+	$self->click_to( 'z_dim' );
+	my $z = $self->return_text();
 
 	#close the scale menu
 	$self->click_to( 'scale_button' );
-	return [ $x, $y ];
+	return [ $x, $y, $z ];
 
 }
 

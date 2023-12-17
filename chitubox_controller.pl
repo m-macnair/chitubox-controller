@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # ABSTRACT: Multi-purpose chitubox controller
-our $VERSION = 'v2.0.2';
+our $VERSION = 'v2.0.3';
 
-##~ DIGEST : 341c34764244f013e70330534d981bd3
+##~ DIGEST : 1511b278eb2c7fb23532f13e7e6779d9
 use strict;
 use warnings;
 
@@ -437,7 +437,7 @@ sub allocate_position_in_db_mk2 {
 	$self->query( "update projects set project_block = ? where project_block = -1", $max );
 	my $assigned_row  = $self->query( "select count(*) as count from projects where project_block = ? ",                     $max )->fetchrow_arrayref();
 	my $remaining_row = $self->query( "select count(*) as count from projects where project_block is null and project = ? ", $project_id )->fetchrow_arrayref();
-	print "$/\tPlaced [$assigned_row->[0]] Items$/\t[$remaining_row->[0]] Items remaining that have not been placed$/";
+	print "$/\tPlaced [$assigned_row->[0]] Items in Block [$max] $/\t[$remaining_row->[0]] Items remaining that have not been placed$/";
 	return 0;
 }
 
