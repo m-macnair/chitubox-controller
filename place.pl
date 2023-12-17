@@ -3,9 +3,9 @@ use strict;
 use warnings;
 
 # ABSTRACT: run ChituboxController::import_work_list()
-our $VERSION = 'v1.0.4';
+our $VERSION = 'v1.0.5';
 
-##~ DIGEST : 323eb93eb4d688f12ac06237db122d75
+##~ DIGEST : 42e25d2f99dd0243abeb264a35c2c2c1
 
 BEGIN {
 	push( @INC, "./lib/" );
@@ -22,7 +22,7 @@ sub main {
 	$self->_do_db( {} );
 	my $project_row = $self->query( "select * from projects where project_block = ? limit 1", $project_block )->fetchrow_hashref();
 
-	#$self->clear_plate();
+	$self->clear_for_project();
 	$self->machine_select( $project_row->{machine} );
 	$self->update( 'projects', {'state' => 'positioned'}, {project_block => $project_block} );
 	$self->place_stl_rows( lc( $project_block ) );

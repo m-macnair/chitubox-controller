@@ -3,9 +3,9 @@ use strict;
 use warnings;
 
 # ABSTRACT: run ChituboxController::import_work_list()
-our $VERSION = 'v1.0.2';
+our $VERSION = 'v1.0.3';
 
-##~ DIGEST : b09703278cb0cec8ead33246ec7405a0
+##~ DIGEST : fc0469851858504f54f426f37b833745
 
 BEGIN {
 	push( @INC, "./lib/" );
@@ -19,6 +19,7 @@ sub main {
 	my $self = ChituboxController->new();
 	my ( $path, $project_id ) = @_;
 	die "Path not provided"       unless $path;
+	die "Path invalid"            unless -f $path;
 	die "Project ID not provided" unless $project_id;
 	my $res = {
 		csv_file   => $path,

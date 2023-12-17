@@ -1,8 +1,8 @@
 # ABSTRACT : Module for interacting with Chitubox using ControlByGui
 package Moo::GenericRole::ControlByGui::Chitubox;
-our $VERSION = 'v0.0.4';
+our $VERSION = 'v0.0.5';
 
-##~ DIGEST : fea34924731b741d15a28c542021152f
+##~ DIGEST : abc02fba6923905323cf79637ba5dc09
 use strict;
 use Moo::Role;
 use 5.006;
@@ -61,6 +61,17 @@ sub import_and_position {
 		$self->click_to( 'select_all' );
 	}
 	$self->click_to( 'scale_button' );
+
+	#rotate first as chitubox can change the center point
+	if ( $rotate ) {
+		$self->click_to( 'rotate_menu' );
+		$self->click_to( 'z_rot' );
+
+		$self->xdo_key( 'BackSpace' );
+		$self->type_enter( " $rotate" );
+		$self->click_to( 'rotate_menu' );
+	}
+
 	$self->click_to( 'move_button' );
 	$self->click_to( 'x_pos' );
 	$self->xdo_key( 'BackSpace' );
@@ -74,15 +85,6 @@ sub import_and_position {
 	#close the menu
 	$self->click_to( 'move_button' );
 
-	if ( $rotate ) {
-		$self->click_to( 'rotate_menu' );
-		$self->click_to( 'z_rot' );
-
-		$self->xdo_key( 'BackSpace' );
-		$self->type_enter( " $rotate" );
-		$self->click_to( 'rotate_menu' );
-
-	}
 }
 
 sub position_selected {
@@ -120,6 +122,16 @@ sub get_single_file_project_dimensions {
 
 	$self->wait_for_progress_bar();
 	sleep( 1 );
+	my $ref = $self->get_current_dimensions();
+	$self->click_to( 'delete' );
+	return $ref;
+
+}
+
+sub get_current_dimensions {
+	my ( $self ) = @_;
+
+	$self->click_to( 'mirror_button' ); # clear any previous menu
 	$self->click_to( 'scale_button' );
 	$self->click_to( 'x_dim' );
 	my $x = $self->return_text();
@@ -129,8 +141,6 @@ sub get_single_file_project_dimensions {
 
 	$self->click_to( 'z_dim' );
 	my $z = $self->return_text();
-
-	$self->click_to( 'delete' );
 
 	#close the scale menu
 	$self->click_to( 'scale_button' );

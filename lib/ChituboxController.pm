@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # ABSTRACT: Multi-purpose chitubox controller
-our $VERSION = 'v2.2.4';
+our $VERSION = 'v3.0.2';
 
-##~ DIGEST : 8d18dc6dd6484c6014fa85842ea591fc
+##~ DIGEST : 545f435394d9e7ebde08ba8e1ae719c7
 use strict;
 use warnings;
 
@@ -24,6 +24,7 @@ use Time::HiRes qw( usleep ualarm gettimeofday tv_interval nanosleep
   clock_gettime clock_getres clock_nanosleep clock
   stat lstat utime);
 use Math::Round;
+use List::Util qw(min max);
 around "new" => sub {
 
 	#This is apparently the standard
@@ -36,6 +37,7 @@ around "new" => sub {
 	$self->ControlByGui_coordinate_map(
 		{
 			hamburger      => [ 35, 75 ],
+			'new_project'  => [ 10, 115 ],
 			'open'         => [ 10, 220 ],
 			'open_project' => [ 10, 155 ],
 			'rotate_menu'  => [ 10, 460 ],
@@ -79,6 +81,9 @@ around "new" => sub {
 			move_button => [ 20,  370 ],
 			z_rot       => [ 212, 520 ],
 
+			#
+			'mirror_button' => [ 30, 640 ],
+
 			#plate adjustment
 			'first_object'  => [ 1633, 240 ],
 			'second_object' => [ 1633, 275 ],
@@ -113,61 +118,8 @@ around "new" => sub {
 	);
 
 	#offsets are the printing offset values to mask screen problems as defined in the printer setting
-	$self->{machine_definitions} = {
 
-		'm0' => {
-			id              => 'm1',
-			x_dimension     => 77,
-			y_dimension     => 82,
-			margin          => 1,
-			menu_y_position => 165,
-
-			#x_offset => 2,   y_offset => 40
-		},
-		'm5' => {
-			id              => 'm5',
-			x_dimension     => 78,
-			y_dimension     => 126,
-			margin          => .75,
-			menu_y_position => 215,
-
-			#x_offset => 1.5, y_offset => .2
-		},
-
-		'm7' => {
-			id              => 'm7',
-			x_dimension     => 68,
-			y_dimension     => 110,
-			margin          => 1,
-			menu_y_position => 285,
-
-			x_offset => -2,
-			y_offset => -5
-		},
-		'm1' => {
-			id              => 'm1',
-			x_dimension     => 75,
-			y_dimension     => 82,
-			margin          => 1,
-			menu_y_position => 335,
-
-			#'A' and 'D' in the offset menu?
-			x_offset => 0,
-			y_offset => 18
-		},
-
-		#This probably should not be used for automation
-		'm4' => {
-			id              => 'm4',
-			x_dimension     => 192.004,
-			y_dimension     => 120,
-			margin          => 1,
-			menu_y_position => 495,
-
-			#x_offset => 1.5, y_offset => .2
-		},
-
-	};
+	$self->{machine_definitions} = Config::Any::Merge->load_files( {files => [qw{./machine_definitions.perl}], flatten_to_hash => 0} );
 	return $self;
 
 };
@@ -195,6 +147,7 @@ sub import_work_list {
 		$project_id = "default";
 		Carp::cluck( "no project id provided for import_work_list; set to [$project_id]" );
 	}
+
 	for my $project_row_href ( @{$stack} ) {
 
 		#print "processing $project_row_href->{path}$/";
@@ -203,8 +156,10 @@ sub import_work_list {
 			$self->insert( 'files', {file_path => $project_row_href->{path}} );
 			$file_row = $self->select( 'files', [qw/* rowid/], {file_path => $project_row_href->{path}} )->fetchrow_hashref;
 		}
+		$project_row_href->{count} =~ s/^\s+|\s+$//g;
+		print "\tImporting  [$project_row_href->{count}] of [$project_row_href->{path}]$/";
 
-		while ( $project_row_href->{count} ) {
+		while ( $project_row_href->{count} > 0 ) {
 
 			$self->insert(
 				'projects',
@@ -215,6 +170,7 @@ sub import_work_list {
 			);
 			$project_row_href->{count}--;
 		}
+
 	}
 }
 
@@ -267,10 +223,18 @@ sub export_plate_as_single_file_projects {
 		$path = './working_mono.png';
 		print `import -window root -quality 95 -compress none -negate -crop 275x27+1630+225 $path`;
 		my $text = get_ocr( $path );
+
+		unless ( $text ) {
+			warn "no text returned from OCR";
+			$text = "file_" . int( rand( 100_000 ) );
+		}
+		$text =~ s/[^\x00-\x7F]/_/g;
+		$text = lc( $text );
 		$text =~ s/\#.*//;
-		$text =~ s/stl//;
+		$text =~ s/stl^//;
+		$text =~ s/obj^//;
 		$text =~ s/\.//;
-		$text = lc( substr( $text, 1 ) );
+		$text = substr( $text, 1 );
 		$text =~ s/^\s+|\s+$//g;
 		$text =~ s/\s/_/g;
 
@@ -287,11 +251,29 @@ sub export_plate_as_single_file_projects {
 
 		#Today the lesson is - 1. wait for progress always and 2. lock the screen (smartly) when an action is actioning in  a gui application
 		$self->wait_for_progress_bar();
+		unless ( $p->{skip} ) {
+			my $dim = $self->get_current_dimensions();
+
+			$self->insert(
+				'files',
+				{
+					file_path   => $out_path,
+					x_dimension => $dim->[0],
+					y_dimension => $dim->[1],
+					z_dimension => $dim->[2],
+				}
+			);
+		}
+
+		$self->click_to( 'first_object' );
+
 		$self->click_to( 'delete_object' );
 
 		#check if more objects remain
 		$self->click_to( 'first_object' );
+
 		$has_remaining = $self->if_colour_name_at_named( 'highlighted_in_objects', 'first_object' );
+
 	} while ( $has_remaining );
 
 }
@@ -347,88 +329,118 @@ sub allocate_position_in_db_mk2 {
 	my $get_row_sth = $self->dbh->prepare( "
 		select 
 			f.file_path,
-			f.x_dimension + $combined_margin as  x_dimension,
-			f.y_dimension + $combined_margin as  y_dimension,
-			max(f.x_dimension + $combined_margin , f.y_dimension + $combined_margin) as longest_edge,
-			min(f.x_dimension + $combined_margin , f.y_dimension + $combined_margin) as shortest_edge,
+			round(f.x_dimension + $combined_margin,2) as  x_dimension,
+			round(f.y_dimension + $combined_margin,2) as  y_dimension,
+			round(max(f.x_dimension + $combined_margin , f.y_dimension + $combined_margin),2) as longest_edge,
+			round(min(f.x_dimension + $combined_margin , f.y_dimension + $combined_margin),2) as shortest_edge,
 			p.rotate,
 			p.rowid,
-			p.file_id
+			p.file_id,
+			round(( f.x_dimension * f.y_dimension ),2) as area
 		from files f 
 		join projects p 
 			on f.rowid = p.file_id 
 		where 
 			state is null
-			
 			/*SQLite + DBI oddity*/
 			and longest_edge <= ( ? + 0 )
 			and shortest_edge <= ( ? + 0 )
 			and project = ? 
 		order by 
-			longest_edge desc
+			area desc
 		limit 1" );
 
 	#TODO: remove concepts of x and y and switch to min and max dimensions
 	#use List::Util qw(min);
 
-	my $remaining_short_space = my $machine_short_space = $this_machine->{x_dimension} - $combined_margin;
-	my $remaining_long_space  = my $machine_long_space  = $this_machine->{y_dimension} - $combined_margin;
+	my $remaining_space_for_columns = my $machine_short_space = $this_machine->{x_dimension} - $combined_margin;
+	my $remaining_space_for_rows    = my $machine_long_space  = $this_machine->{y_dimension} - $combined_margin;
 
 	#Math::Round::nearest_ceil(.01, );
 
 	while ( 1 ) {
 
-		my $row_height = ( $next_long_cursor - $long_cursor ); #the available y space claimed by the largest (and first) item in this rank, may be negative if nothing has been placed yet
+		my $row_height = ( $next_long_cursor - $long_cursor ); #the available y space claimed by the largest (and first) item in this row, may be negative if nothing has been placed yet
 
 		#if we have already determined a row height
 		#if short cursor is zero then this is a new band and has to be treated as such
 		if ( $short_cursor && $next_long_cursor ) {
 
+			my $effective_long  = max( $remaining_space_for_columns, $row_height );
+			my $effective_short = min( $remaining_space_for_columns, $row_height );
+
 			# try and find something that fits in the existing row
-			print "$/\tSeeking band mate with [L.$remaining_short_space,S.$row_height]$/";
-			$get_row_sth->execute( $remaining_short_space + 0, $row_height + 0, $project_id );
+			print "$/\tSeeking row mate with [L:$remaining_space_for_columns,S:$row_height/EL:$effective_long,ES:$effective_short]$/";
+			$get_row_sth->execute( $effective_long, $effective_short, $project_id );
 		} else {
 
-			# find the largest possible printable thing for this notional band
-			print "$/\tSeeking largest possible with [L.$remaining_long_space,S.$remaining_short_space]$/";
-			$get_row_sth->execute( $remaining_long_space + 0, $remaining_short_space + 0, $project_id );
+			my $effective_long  = max( $remaining_space_for_rows, $remaining_space_for_columns );
+			my $effective_short = min( $remaining_space_for_rows, $remaining_space_for_columns );
+
+			# find the largest possible printable thing for this notional row
+			print "$/\tSeeking largest possible with [L:$remaining_space_for_rows,S:$remaining_space_for_columns/EL:$effective_long,ES:$effective_short]$/";
+
+			$get_row_sth->execute( $effective_long, $effective_short, $project_id );
 		}
 
 		#try to fit within Y of previously placed objects - if it's been set; this is always what I want :>
 		my $row = $get_row_sth->fetchrow_hashref();
-		warn Dumper( $row );
-		die if $remaining_long_space < 1;
+		print "\t" . Dumper( $row );
+		print $/;
+		die "long space is less than 1" if $remaining_space_for_rows < 1;
 
 		#otherwise go to the start of a new row
 		unless ( $row ) {
-			$long_cursor           = $next_long_cursor;
-			$remaining_long_space  = $machine_long_space - $next_long_cursor;
-			$short_cursor          = 0;
-			$remaining_short_space = $machine_short_space;
+			$long_cursor                 = $next_long_cursor;
+			$remaining_space_for_rows    = $machine_long_space - $next_long_cursor;
+			$short_cursor                = 0;
+			$remaining_space_for_columns = $machine_short_space;
 
-			$remaining_long_space = Math::Round::nearest_ceil( .01, $remaining_long_space );
+			$remaining_space_for_rows = Math::Round::nearest_ceil( .01, $remaining_space_for_rows );
 
-			print "\tReset cursors and re-seeking anything with [L.$remaining_long_space,S.$remaining_short_space]$/";
-			$get_row_sth->execute( $remaining_long_space, $remaining_short_space, $project_id );
+			my $effective_long  = max( $remaining_space_for_rows, $remaining_space_for_columns );
+			my $effective_short = min( $remaining_space_for_rows, $remaining_space_for_columns );
+
+			print "\tReset cursors and re-seeking anything with [L:$effective_long,S:$effective_short]$/";
+			$get_row_sth->execute( $effective_long, $effective_short, $project_id );
 
 			$row = $get_row_sth->fetchrow_hashref();
 			unless ( $row ) {
-				print "\t\tNo objects available for remaining space of [L.$remaining_long_space,S.$remaining_short_space]$/";
+				print "\t\tNo objects available for remaining space of [L:$effective_long,S:$effective_short]$/";
 				last;
 			}
 		}
 
-		#did we find something that's best rotated
-		my ( $new_x, $new_y, $rotate );
-		if (
-			   $row->{x_dimension} > $remaining_short_space
-			|| $row->{y_dimension} > $remaining_long_space
-			||
+		#did we find something that's best rotated, with the assumption that we want short y and full x
+		my ( $new_x, $new_y, $rotate, $do_rotate, $long_in_short, $can_rotate );
 
-			# eventually I think this should be a toggle
-			( 1 and $row->{x_dimension} <= $row->{y_dimension} )
-		  )
-		{
+		if ( $row->{longest_edge} <= $remaining_space_for_columns ) {
+			print "\tObject can fit longest edge horizontally$/";
+			$can_rotate = 1;
+		}
+
+		if ( $row->{x_dimension} > $remaining_space_for_columns ) {
+			print "\tObject can only fit rotated$/";
+			$can_rotate = 1;
+		}
+
+		if ( $can_rotate ) {
+			if (
+				$row->{longest_edge} eq $row->{y_dimension}           #if the long dimension fits in the short dimension, is the long dimension on the y axis of the object
+				or $row->{x_dimension} > $remaining_space_for_columns #or is rotation the only way the object will fit into the column space
+			  )
+			{
+				#then it should be rotated
+				$do_rotate = 1;
+				print "\tObject will be rotated$/";
+			} else {
+				print "\tObject not rotated as Longest Edge [$row->{longest_edge}] is not the Y dimension [$row->{y_dimension}]$/";
+			}
+		} else {
+			print "\tWill not fit rotated [$row->{longest_edge} <= $remaining_space_for_columns] && [$row->{shortest_edge} <= $remaining_space_for_rows]$/";
+		}
+
+		if ( $do_rotate ) {
 			$new_x  = $row->{y_dimension};
 			$new_y  = $row->{x_dimension};
 			$rotate = 90;
@@ -448,23 +460,23 @@ sub allocate_position_in_db_mk2 {
 
 		#set a new band
 		if ( $long_band_end > $next_long_cursor ) {
+			print "\t\t\tSetting row height from [$next_long_cursor] to [$long_band_end]$/";
 			$next_long_cursor = $long_band_end;
-			print "\t\t\tSetting band boundaries to [L.$long_cursor : L.$next_long_cursor]$/";
 		}
 
-		$short_cursor          = $short_band_end;
-		$remaining_short_space = $machine_short_space - $short_cursor;
+		$short_cursor                = $short_band_end;
+		$remaining_space_for_columns = $machine_short_space - $short_cursor;
 
-		if ( $remaining_short_space < 0 ) {
-			$remaining_long_space = $machine_long_space - $next_long_cursor;
+		if ( $remaining_space_for_columns < 0 ) {
+			$remaining_space_for_rows = $machine_long_space - $next_long_cursor;
 
-			$remaining_long_space = Math::Round::nearest_ceil( .01, $remaining_long_space );
+			$remaining_space_for_rows = Math::Round::nearest_ceil( .01, $remaining_space_for_rows );
 
-			print "\tReset for next band with cursor at [S.$short_cursor,L.$long_cursor] (margin?) starting at [L.$next_long_cursor] with [L.$remaining_long_space] available for remaining bands $/";
-			$long_cursor           = $next_long_cursor;
-			$short_cursor          = 0;
-			$remaining_short_space = $machine_short_space;
-			if ( $remaining_long_space < 1 ) {
+			print "\tReset for next band with cursor at [S:$short_cursor,L:$long_cursor] (margin?) starting at [L:$next_long_cursor] with [L:$remaining_space_for_rows] available for remaining rows $/";
+			$long_cursor                 = $next_long_cursor;
+			$short_cursor                = 0;
+			$remaining_space_for_columns = $machine_short_space;
+			if ( $remaining_space_for_rows < 1 ) {
 				print "\t\t\tDBI/SQLite does not handle numbers less than 1 as expected and the margin is unlikely to fit anything, ending plate$/";
 				last;
 			}
@@ -501,7 +513,7 @@ sub allocate_position_in_db_mk2 {
 	$self->query( "update projects set project_block = ? where project_block = -1", $max );
 	my $assigned_row  = $self->query( "select count(*) as count from projects where project_block = ? ",             $max )->fetchrow_arrayref();
 	my $remaining_row = $self->query( "select count(*) as count from projects where state is null and project = ? ", $project_id )->fetchrow_arrayref();
-	print "$/\tPlaced [$assigned_row->[0]] Items in Block [$max] $/\t[$remaining_row->[0]] Items remaining in project that have not been placed$/";
+	print "$/\tPlaced [$assigned_row->[0]] Items in Block [$max] using machine [$machine_id]$/\t[$remaining_row->[0]]  Items remaining in project [$project_id] that have not been placed$/";
 	return 0;
 }
 
@@ -509,6 +521,7 @@ sub allocate_position_in_db_mk2 {
 sub place_stl_rows {
 
 	my ( $self, $project_block ) = @_;
+
 	die "Project ID not provided" unless $project_block;
 	my $machine_row = $self->query( "select machine from projects where project_block = ? limit 1 ", $project_block )->fetchrow_arrayref();
 	die "Machine for project block [$project_block] not found" unless $machine_row;
@@ -566,6 +579,15 @@ sub place_stl_rows {
 	} while ( $row );
 	print "Finished positioning items in [$project_block]";
 	return;
+}
+
+sub clear_for_project {
+	my ( $self ) = @_;
+	$self->clear_plate();
+	$self->click_to( "hamburger" );
+	sleep( 1 );
+	$self->click_to( "new_project" );
+	sleep( 1 );
 }
 
 sub object_stack_to_bands {
@@ -626,34 +648,35 @@ sub slice_and_save {
 		$self->click_to( 'slice_platform_yes' );
 		print "$/\t GOING OVER LIMIT$/";
 		sleep( 1 );
-	} else {
-		die "nope";
 	}
 	$self->wait_for_progress_bar();
 	$self->click_to( 'slice_save' );
 	sleep( 1 );
-	my $project_string = join( '_', ( $project_row->{project}, uc( $project_row->{machine} ), 'P' . uc( $project_row->{project_block} ), ) );
+	my $project_string = join( '_', ( $project_row->{project}, 'P' . uc( $project_row->{project_block} ), uc( $project_row->{machine} ), ) );
 	my $o_dir;
 	unless ( $p->{o_dir} ) {
-		require FindBin;
-		$o_dir = $FindBin::Bin;
+
+		#require FindBin;
+		#$o_dir = $FindBin::Bin;
+		$o_dir = '/home/m/Hobby/Hobby-Huge/Automation/PrintPlates/';
 	}
 
 	my $o_path = "$o_dir/$project_string.chitubox";
 	if ( -e $o_path ) {
 		print "[$o_path] already exists!";
 	}
+	my $measure_path = "$o_dir/$project_string\_measurements.png";
+	my $preview_path = "$o_dir/$project_string\_preview.png";
+	unlink( $measure_path ) if -e $measure_path;
+	unlink( $preview_path ) if -e $measure_path;
+
+	print `import -window root -quality 95 -compress none -negate -crop 330x225+1650+235 $measure_path`;
+	print `import -window root -quality 50 -crop 1000x1000+100+100 $preview_path`;
 	$o_path = $self->safe_duplicate_path( $o_path );
 	print "$/\tsaving to $o_path$/";
 	$self->type_enter( $o_path );
 	sleep( 3 );
 	$self->wait_for_progress_bar();
-	my $measure_path = "$o_dir/$project_string\_measurements.png";
-	my $preview_path = "$o_dir/$project_string\_preview.png";
-	unlink( $measure_path ) if -e $measure_path;
-	unlink( $preview_path ) if -e $measure_path;
-	print `import -window root -quality 95 -compress none -negate -crop 330x225+1650+235 $measure_path`;
-	print `import -window root -quality 50 -crop 750x575+100+270 $preview_path`;
 	$self->click_to( 'slice_back' );
 }
 
@@ -664,7 +687,7 @@ sub machine_select {
 	$self->click_to( 'print_settings' );
 	my $this_machine = $self->{machine_definitions}->{$machine_id};
 	die "Machine [$machine_id] not found" unless $this_machine;
-	print "$/\t Selecting [$machine_id]";
+	print "$/\tSelecting [$machine_id] at ";
 	$self->move_to( [ 450, 225 + $this_machine->{menu_y_position} ] );
 	sleep( 1 ); #highlight transitions cause crashes
 	$self->click();
