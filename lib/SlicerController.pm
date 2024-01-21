@@ -1,12 +1,12 @@
 #!/usr/bin/perl
 # ABSTRACT: Multi-purpose chitubox controller
-our $VERSION = 'v3.0.2';
+our $VERSION = 'v3.0.6';
 
-##~ DIGEST : 545f435394d9e7ebde08ba8e1ae719c7
+##~ DIGEST : d9a25690fafa95fe6bbd92c0b649c437
 use strict;
 use warnings;
 
-package ChituboxController;
+package SlicerController;
 use v5.10;
 use Moo;
 use Carp;
@@ -15,6 +15,7 @@ with qw/
   Moo::GenericRole::ControlByGui
   Moo::GenericRole::ControlByGui::Chitubox
   Moo::GenericRole::FileIO::CSV
+  Moo::GenericRole::ConfigAny
   Moo::GenericRole::DB::Working::AbstractSQLite
   /;                                     # AbstractSQLite is a wrapper class for all dbi actions
 
@@ -33,96 +34,28 @@ around "new" => sub {
 
 	my $y_offset = 0;
 
+	$self->_setup();
+
 	#assuming window is at 0,0
-	$self->ControlByGui_coordinate_map(
-		{
-			hamburger      => [ 35, 75 ],
-			'new_project'  => [ 10, 115 ],
-			'open'         => [ 10, 220 ],
-			'open_project' => [ 10, 155 ],
-			'rotate_menu'  => [ 10, 460 ],
-
-			#x
-			'rotate_x45+' => [ 95,  465 ],
-			'rotate_x45-' => [ 145, 495 ],
-
-			#y
-			'rotate_y45+' => [ 95,  465 ],
-			'rotate_y45-' => [ 145, 495 ],
-
-			'support_menu'      => [ 1840, 135 ],
-			'add_supports_mode' => [ 1710, 830 ],
-			'light_supports'    => [ 1815, 260 ],
-			'add_supports'      => [ 1860, 780 ],
-			'progress_bar_xy'   => [ 10,   1070 ],
-
-			#???
-			'main_settings' => [ 1710, 125 ],
-			'delete'        => [ 1905, 185 ],
-
-			#project
-			save_project            => [ 35,  190 ],
-			save_project_all_models => [ 220, 120 ],
-			save_project_single     => [ 250, 150 ],
-
-			#scaling
-			scale_button => [ 20,  530 ],
-			x_dim        => [ 110, 585 ],
-			y_dim        => [ 110, 620 ],
-			z_dim        => [ 110, 650 ],
-
-			#positioning
-			move_button => [ 20,   360 ],
-			x_pos       => [ 160,  390 ],
-			y_pos       => [ 160,  425 ],
-			select_all  => [ 1830, 195 ],
-
-			#rotating
-			move_button => [ 20,  370 ],
-			z_rot       => [ 212, 520 ],
-
-			#
-			'mirror_button' => [ 30, 640 ],
-
-			#plate adjustment
-			'first_object'  => [ 1633, 240 ],
-			'second_object' => [ 1633, 275 ],
-			'delete_object' => [ 1900, 200 ],
-
-			#slice & export
-			'slice_button'       => [ 1700, 700 ],
-			'slice_save'         => [ 1780, 560 ],
-			'slice_back'         => [ 1780, 770 ],
-			'slice_platform_yes' => [ 900,  600 ],
-			'viewing_angle'      => [ 1475, 140 ],
-
-			#Machine selection
-			'print_settings'       => [ 1750, 620 ],
-			'close_print_settings' => [ 1500, 240 ],
-
-		}
-	);
-
-	$self->ControlByGui_values(
-		{
-			colour => {
-				select_all_on          => '#808080',
-				progress_bar_clear     => '#3D3D3D',
-				progress_bar_wait      => '#54BBFF',
-				xclip_file_path        => '#AFAFAF',
-				highlighted_in_objects => '#56C3FF', # >:(
-				over_plate_yes_button  => '#4EAEEE',
-
-			},
-		}
-	);
-
 	#offsets are the printing offset values to mask screen problems as defined in the printer setting
 
-	$self->{machine_definitions} = Config::Any::Merge->load_files( {files => [qw{./machine_definitions.perl}], flatten_to_hash => 0} );
+	$self->{machine_definitions} = Config::Any::Merge->load_files( {files => [qw{./config/machine_definitions.perl}], flatten_to_hash => 0} );
 	return $self;
 
 };
+
+sub _setup {
+	my ( $self, $p ) = @_;
+	$p ||= {};
+
+	$self->ControlByGui_coordinate_map( $self->config_file( $p->{coordinate_map} || './config/chitubox_coordinate_map.perl' ) );
+	$self->ControlByGui_values( $self->config_file( $p->{colour_values}          || './config/colour_values.perl' ) );
+
+	my $ui_config = Config::Any::Merge->load_files( {files => [qw{./config/ui.perl}], flatten_to_hash => 0} );
+	$self->ControlByGui_x_offset( 4014 );
+	$self->ControlByGui_coordinate_map->{console} = [ 2794, 1916 ];
+
+}
 
 sub _do_db {
 	my ( $self, $res ) = @_;
@@ -132,7 +65,7 @@ sub _do_db {
 	} else {
 
 		#$self->setup_working_db_copy( './working_db.sqlite' );
-		$self->sqlite3_file_to_dbh( './working_db.sqlite' );
+		$self->sqlite3_file_to_dbh( './db/working_db.sqlite' );
 	}
 }
 
@@ -180,19 +113,23 @@ sub get_outstanding_dimensions {
 	$self->_do_db( $res );
 	while ( my $file_row = $self->select( 'files', [qw/* rowid/], {x_dimension => undef} )->fetchrow_hashref() ) {
 
-		#die "working on $file_row->{file_path}";
-		my $dim = $self->get_single_file_project_dimensions( $file_row->{file_path} );
-		$self->update(
-			'files',
-			{
-				x_dimension => $dim->[0],
-				y_dimension => $dim->[1],
-				z_dimension => $dim->[2],
-			},
-			{
-				rowid => $file_row->{rowid}
-			}
-		);
+		if ( -f $file_row->{file_path} ) {
+
+			my $dim = $self->get_single_file_project_dimensions( $file_row->{file_path} );
+			$self->update(
+				'files',
+				{
+					x_dimension => $dim->[0],
+					y_dimension => $dim->[1],
+					z_dimension => $dim->[2],
+				},
+				{
+					rowid => $file_row->{rowid}
+				}
+			);
+		} else {
+			warn "[$file_row->{file_path}] not found for file [$file_row->{rowid}], skipping $/";
+		}
 	}
 }
 
@@ -211,9 +148,7 @@ sub export_plate_as_single_file_projects {
 	$p ||= {};
 	my $has_remaining;
 	do {
-		unless ( $self->if_colour_name_at_named( 'select_all_on', 'select_all' ) ) {
-			$self->click_to( 'select_all' );
-		}
+		$self->set_select_all_off();
 		$self->click_to( 'first_object' );
 
 		#better contrast when the target item is the one highlighted after the select all has been turned off
@@ -245,7 +180,7 @@ sub export_plate_as_single_file_projects {
 		$self->click_to( 'main_settings' );
 		$self->click_to( "hamburger" );
 		$self->move_to_named( 'save_project' ); # this is a hover menu so we need to give it time to appear
-		sleep( 1 );
+		$self->dynamic_sleep();
 		$self->click_to( 'save_project_single' );
 		$self->type_enter( $out_path );
 
@@ -299,9 +234,18 @@ sub get_file_list {
 			chomp( $file_path );
 			if ( -e $file_path ) {
 				push( @stack, {count => $x, path => $file_path} );
+
 			} else {
-				warn( "[$file_path] not found" );
-				sleep( 1 );
+				my $alt = $file_path;
+				$alt =~ s| |\ |g;
+				if ( -e $alt ) {
+					warn "spaces problem on [$alt]";
+					push( @stack, {count => $x, path => $file_path} );
+				} else {
+
+					warn( "[$file_path] not found" );
+					$self->dynamic_sleep();
+				}
 			}
 			return 1;
 		},
@@ -517,11 +461,11 @@ sub allocate_position_in_db_mk2 {
 	return 0;
 }
 
-#from the db positions, actually interact with chitubox to place them
+#from the db positions, actually interact with chitubox to place them - assumes the correct machine definition is in use
 sub place_stl_rows {
 
 	my ( $self, $project_block ) = @_;
-
+	$self->set_select_all_off();
 	die "Project ID not provided" unless $project_block;
 	my $machine_row = $self->query( "select machine from projects where project_block = ? limit 1 ", $project_block )->fetchrow_arrayref();
 	die "Machine for project block [$project_block] not found" unless $machine_row;
@@ -584,10 +528,20 @@ sub place_stl_rows {
 sub clear_for_project {
 	my ( $self ) = @_;
 	$self->clear_plate();
+	$self->dynamic_sleep();
 	$self->click_to( "hamburger" );
-	sleep( 1 );
+	$self->dynamic_sleep();
+	$self->clear_dynamic_sleep();
 	$self->click_to( "new_project" );
-	sleep( 1 );
+	$self->dynamic_sleep();
+
+}
+
+sub clear_dynamic_sleep {
+	my ( $self ) = @_;
+	$self->{sleep_for}      = 1;
+	$self->{workspace_size} = 0;
+
 }
 
 sub object_stack_to_bands {
@@ -639,29 +593,31 @@ sub slice_and_save {
 	$p ||= {};
 	$self->click_to( 'viewing_angle' );
 	my $project_row = $self->query( "select * from projects where project_block = ? ", $project_block )->fetchrow_hashref();
-	die "project row not found" unless $project_row;
 
+	die "project row not found" unless $project_row;
+	my $this_machine = $self->{machine_definitions}->{$project_row->{machine}};
 	$self->wait_for_progress_bar();
 	$self->click_to( 'slice_button' );
-	sleep( 1 );
+	$self->dynamic_sleep();
+	print "$/Checking for over limit warning$/";
 	if ( $self->if_colour_name_at_named( 'over_plate_yes_button', 'slice_platform_yes' ) ) {
 		$self->click_to( 'slice_platform_yes' );
 		print "$/\t GOING OVER LIMIT$/";
-		sleep( 1 );
+		$self->dynamic_sleep();
 	}
+
+	#waiting for slice preview to finish
 	$self->wait_for_progress_bar();
-	$self->click_to( 'slice_save' );
-	sleep( 1 );
+	$self->click_to( 'slice_save', {offset => $this_machine->{save_offset} || []} );
+	$self->dynamic_sleep();
+
 	my $project_string = join( '_', ( $project_row->{project}, 'P' . uc( $project_row->{project_block} ), uc( $project_row->{machine} ), ) );
 	my $o_dir;
 	unless ( $p->{o_dir} ) {
-
-		#require FindBin;
-		#$o_dir = $FindBin::Bin;
 		$o_dir = '/home/m/Hobby/Hobby-Huge/Automation/PrintPlates/';
 	}
 
-	my $o_path = "$o_dir/$project_string.chitubox";
+	my $o_path = "$o_dir/$project_string.ctb";
 	if ( -e $o_path ) {
 		print "[$o_path] already exists!";
 	}
@@ -670,13 +626,17 @@ sub slice_and_save {
 	unlink( $measure_path ) if -e $measure_path;
 	unlink( $preview_path ) if -e $measure_path;
 
+	#TODO add margin
 	print `import -window root -quality 95 -compress none -negate -crop 330x225+1650+235 $measure_path`;
 	print `import -window root -quality 50 -crop 1000x1000+100+100 $preview_path`;
 	$o_path = $self->safe_duplicate_path( $o_path );
 	print "$/\tsaving to $o_path$/";
 	$self->type_enter( $o_path );
-	sleep( 3 );
-	$self->wait_for_progress_bar();
+	$self->dynamic_wait_for_progress_bar();
+	unless ( -f $o_path ) {
+		$self->play_sound();
+		die "Unknown failure - output file not created";
+	}
 	$self->click_to( 'slice_back' );
 }
 
@@ -688,12 +648,12 @@ sub machine_select {
 	my $this_machine = $self->{machine_definitions}->{$machine_id};
 	die "Machine [$machine_id] not found" unless $this_machine;
 	print "$/\tSelecting [$machine_id] at ";
-	$self->move_to( [ 450, 225 + $this_machine->{menu_y_position} ] );
-	sleep( 1 ); #highlight transitions cause crashes
+	$self->move_to_named( 'printer_select', {y_mini_offset => $this_machine->{menu_y_position}} );
+	$self->dynamic_sleep(); #highlight transitions cause crashes
 	$self->click();
-	sleep( 1 ); #highlight transitions cause crashes
+	$self->dynamic_sleep(); #highlight transitions cause crashes
 	$self->move_to_named( 'close_print_settings' );
-	sleep( 1 ); #highlight transitions cause crashes
+	$self->dynamic_sleep(); #highlight transitions cause crashes
 	$self->click_to( 'close_print_settings' );
 
 }

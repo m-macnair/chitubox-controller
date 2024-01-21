@@ -2,21 +2,21 @@
 use strict;
 use warnings;
 
-# ABSTRACT: run ChituboxController::import_work_list()
-our $VERSION = 'v1.0.3';
+# ABSTRACT: run SlicerController::import_work_list()
+our $VERSION = 'v1.0.4';
 
-##~ DIGEST : fc0469851858504f54f426f37b833745
+##~ DIGEST : 519b9a3a27814a10977a0c42d32c6ee2
 
 BEGIN {
 	push( @INC, "./lib/" );
 }
-use ChituboxController;
+use SlicerController;
 
 package main;
 main( @ARGV );
 
 sub main {
-	my $self = ChituboxController->new();
+	my $self = SlicerController->new();
 	my ( $path, $project_id ) = @_;
 	die "Path not provided"       unless $path;
 	die "Path invalid"            unless -f $path;

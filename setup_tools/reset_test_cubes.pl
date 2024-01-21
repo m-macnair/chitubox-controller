@@ -5,7 +5,7 @@ use warnings;
 # ABSTRACT: run ChituboxController::import_work_list()
 our $VERSION = 'v1.0.3';
 
-##~ DIGEST : 8f2d7fd16a027be56b05de2d42ea965f
+##~ DIGEST : e0349b83d105a551e2b60d855e5da20f
 
 BEGIN {
 	push( @INC, "./lib/" );
@@ -16,10 +16,8 @@ package main;
 main( @ARGV );
 
 sub main {
-	my $self     = ChituboxController->new();
-	my ( $path ) = @_;
-	my $res      = {db_file => $path};
-	$self->get_outstanding_dimensions( $res );
-	$self->play_end_sound();
+	my $self = ChituboxController->new();
+	$self->_do_db( {} );
+	$self->query( "update projects set state = null where project = 'test_cubes'" );
 }
 1;

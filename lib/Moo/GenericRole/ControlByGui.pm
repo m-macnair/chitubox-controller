@@ -1,13 +1,16 @@
 # ABSTRACT : Module using various for interacting with a GUI application through perl
 package Moo::GenericRole::ControlByGui;
-our $VERSION = 'v0.0.2';
+our $VERSION = 'v0.0.6';
 
-##~ DIGEST : 3c2296816b2027788564bfbb3d6f334c
+##~ DIGEST : b06c9d33fae6df290890e8e58bcecee2
 use strict;
 use Moo::Role;
 use 5.006;
 use warnings;
 use Data::Dumper;
+use Carp;
+use POSIX;
+use List::Util qw(min max);
 
 =head1 VERSION & HISTORY
 	<breaking revision>.<feature>.<patch>
@@ -34,8 +37,20 @@ has ControlByGui_coordinate_map => (
 	is      => 'rw',
 	lazy    => 1,
 	default => sub {
-		die "ControlByGui_coordinate_map not overwritten";
+		Carp::confess "ControlByGui_coordinate_map not overwritten";
 	}
+);
+
+has ControlByGui_x_offset => (
+	is      => 'rw',
+	lazy    => 1,
+	default => 0,
+);
+
+has ControlByGui_y_offset => (
+	is      => 'rw',
+	lazy    => 1,
+	default => 0,
 );
 
 has ControlByGui_values => (
@@ -58,8 +73,8 @@ sub return_text {
 }
 
 sub click_to {
-	my ( $self, $name ) = @_;
-	$self->move_to_named( $name );
+	my ( $self, $name, $p ) = @_;
+	$self->move_to_named( $name, $p );
 	$self->click();
 }
 
@@ -81,6 +96,18 @@ sub type_enter {
 sub xdo_key {
 	my ( $self, $key ) = @_;
 	return `xdotool key $key`;
+}
+
+sub play_sound {
+	my ( $self, $path ) = @_;
+	$path ||= '/usr/share/sounds/Oxygen-Im-Nudge.ogg';
+	`cvlc $path vlc://quit &`;
+}
+
+sub play_end_sound {
+	my ( $self ) = @_;
+	$self->play_sound( '/usr/share/sounds/Oxygen-Sys-App-Positive.ogg' );
+
 }
 
 =head3 Read from window 
@@ -129,10 +156,13 @@ sub if_colour_name_at_named {
 =cut
 
 sub move_to_named {
-	my ( $self, $name ) = @_;
-	my $xy = $self->get_named_xy_coordinates( $name );
-
-	return $self->move_to( $xy );
+	my ( $self, $name, $p ) = @_;
+	my $xy = $self->get_named_xy_coordinates( $name, $p );
+	if ( $p->{offset} ) {
+		$xy->[0] += $p->{offset}->[0];
+		$xy->[1] += $p->{offset}->[1];
+	}
+	return $self->move_to( [ $xy->[0] + ( defined( $p->{x_mini_offset} ) ? $p->{x_mini_offset} : 0 ), $xy->[1] + ( defined( $p->{y_mini_offset} ) ? $p->{y_mini_offset} : 0 ) ] );
 }
 
 sub move_to {
@@ -146,11 +176,43 @@ sub move_to {
 }
 
 sub get_named_xy_coordinates {
-	my ( $self, $name, $map ) = @_;
-	$map ||= $self->ControlByGui_coordinate_map();
-	my $return = $map->{$name};
-	die "[$name] Not found in map" unless $return;
-	return $return;
+	my ( $self, $name, $p ) = @_;
+	$p ||= {};
+	my $map = $p->{'map'} || $self->ControlByGui_coordinate_map();
+	die "[$name] Not found in map" unless $map->{$name};
+	my ( $x, $y ) = @{$map->{$name}};
+
+	#	warn "$name original -> $x,$y";
+	unless ( $p->{no_offset} ) {
+		$x += $self->ControlByGui_x_offset();
+		$y += $self->ControlByGui_y_offset();
+	}
+
+	#	warn "$name offset -> $x,$y";
+	return [ $x, $y ];
+}
+
+#calculate a sensible duration to sleep - particularly relevant when many lots of memory is in use and basic functions might take longer than expected for the progress bar to show
+
+sub dynamic_sleep {
+	my ( $self, $sleep, $p ) = @_;
+	$p ||= {};
+
+	#TODO max instead
+	sleep( max( $sleep || 0, $p->{sleep_for} || 0, $self->{sleep_for} || 0, 1 ) );
+}
+
+sub adjust_sleep_for_file {
+	my ( $self, $path ) = @_;
+
+	my $filename = $path;
+	my @stat     = stat $filename;
+	$self->{workspace_size} += $stat[7];
+
+	#sleep 1 second for every 25 mb
+	$self->{sleep_for} = ceil( $self->{workspace_size} / ( 1024 * 1024 * 25 ) );
+	warn "adjusted sleep for to $self->{sleep_for}";
+
 }
 
 =head1 AUTHOR
