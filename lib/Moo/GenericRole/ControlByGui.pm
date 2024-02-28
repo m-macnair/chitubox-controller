@@ -1,8 +1,8 @@
 # ABSTRACT : Module using various for interacting with a GUI application through perl
 package Moo::GenericRole::ControlByGui;
-our $VERSION = 'v0.0.6';
+our $VERSION = 'v0.0.8';
 
-##~ DIGEST : b06c9d33fae6df290890e8e58bcecee2
+##~ DIGEST : 1c3afbf36cb188410cba383cd56d0d53
 use strict;
 use Moo::Role;
 use 5.006;
@@ -25,32 +25,19 @@ use List::Util qw(min max);
 =head3 Output to program
 =cut
 
-has ControlByGui_settings => (
+has ControlByGui_zero_point => (
 	is      => 'rw',
 	lazy    => 1,
 	default => sub {
-		return {zero_coordinates => [ 0, 0 ]};
+		Carp::confess "ControlByGui_zero_point not overwritten";
 	}
 );
-
 has ControlByGui_coordinate_map => (
 	is      => 'rw',
 	lazy    => 1,
 	default => sub {
 		Carp::confess "ControlByGui_coordinate_map not overwritten";
 	}
-);
-
-has ControlByGui_x_offset => (
-	is      => 'rw',
-	lazy    => 1,
-	default => 0,
-);
-
-has ControlByGui_y_offset => (
-	is      => 'rw',
-	lazy    => 1,
-	default => 0,
 );
 
 has ControlByGui_values => (
@@ -76,6 +63,8 @@ sub click_to {
 	my ( $self, $name, $p ) = @_;
 	$self->move_to_named( $name, $p );
 	$self->click();
+
+	#sleep(1);
 }
 
 sub click {
@@ -158,11 +147,16 @@ sub if_colour_name_at_named {
 sub move_to_named {
 	my ( $self, $name, $p ) = @_;
 	my $xy = $self->get_named_xy_coordinates( $name, $p );
+
+	#offset here being the offset from the default zero point which is the baseline for everything else
 	if ( $p->{offset} ) {
 		$xy->[0] += $p->{offset}->[0];
 		$xy->[1] += $p->{offset}->[1];
 	}
-	return $self->move_to( [ $xy->[0] + ( defined( $p->{x_mini_offset} ) ? $p->{x_mini_offset} : 0 ), $xy->[1] + ( defined( $p->{y_mini_offset} ) ? $p->{y_mini_offset} : 0 ) ] );
+	my $x = $xy->[0] + ( defined( $p->{x_mini_offset} ) ? $p->{x_mini_offset} : 0 );
+	my $y = $xy->[1] + ( defined( $p->{y_mini_offset} ) ? $p->{y_mini_offset} : 0 );
+
+	return $self->move_to( [ $x, $y ] );
 }
 
 sub move_to {
@@ -182,13 +176,13 @@ sub get_named_xy_coordinates {
 	die "[$name] Not found in map" unless $map->{$name};
 	my ( $x, $y ) = @{$map->{$name}};
 
-	#	warn "$name original -> $x,$y";
+	print "$name original -> $x,$y$/";
 	unless ( $p->{no_offset} ) {
-		$x += $self->ControlByGui_x_offset();
-		$y += $self->ControlByGui_y_offset();
+		$x += $self->ControlByGui_zero_point->[0];
+		$y += $self->ControlByGui_zero_point->[1];
 	}
 
-	#	warn "$name offset -> $x,$y";
+	print "$name offset -> $x,$y$/";
 	return [ $x, $y ];
 }
 
@@ -197,9 +191,17 @@ sub get_named_xy_coordinates {
 sub dynamic_sleep {
 	my ( $self, $sleep, $p ) = @_;
 	$p ||= {};
-
-	#TODO max instead
 	sleep( max( $sleep || 0, $p->{sleep_for} || 0, $self->{sleep_for} || 0, 1 ) );
+}
+
+sub dynamic_short_sleep {
+	my ( $self ) = @_;
+	$p ||= {};
+	my $sleep_for = ceil( ( $self->{sleep_for} || 1 ) / ( $self->config->{dynamic_sleep_short_divider} || 1 ) );
+	$sleep_for = 1 if $sleep_for < 1;
+	print "dynamic_short_sleep : $sleep_for$/";
+	sleep( $sleep_for );
+
 }
 
 sub adjust_sleep_for_file {
@@ -209,8 +211,8 @@ sub adjust_sleep_for_file {
 	my @stat     = stat $filename;
 	$self->{workspace_size} += $stat[7];
 
-	#sleep 1 second for every 25 mb
-	$self->{sleep_for} = ceil( $self->{workspace_size} / ( 1024 * 1024 * 25 ) );
+	#sleep 1 second for every x mb
+	$self->{sleep_for} = ceil( $self->{workspace_size} / ( 1024 * 1024 * $self->config->{dynamic_sleep_megabyte_size} ) );
 	warn "adjusted sleep for to $self->{sleep_for}";
 
 }

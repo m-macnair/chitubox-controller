@@ -1,8 +1,8 @@
 # ABSTRACT : Module for interacting with Chitubox using ControlByGui
 package Moo::GenericRole::ControlByGui::Chitubox;
-our $VERSION = 'v0.0.9';
+our $VERSION = 'v0.0.10';
 
-##~ DIGEST : c26ae6a7a1ce171cdbdf8cc55c9e6fe4
+##~ DIGEST : 0f681289042d7d843551a93740cc4656
 use strict;
 use Moo::Role;
 use 5.006;
@@ -119,6 +119,7 @@ sub get_single_file_project_dimensions {
 	$self->click_to( "hamburger" );
 	$self->click_to( 'open_project' );
 	$self->type_enter( $file );
+
 	$self->adjust_sleep_for_file( $file );
 	$self->dynamic_sleep();
 	$self->wait_for_progress_bar();

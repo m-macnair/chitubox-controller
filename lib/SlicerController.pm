@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # ABSTRACT: Multi-purpose chitubox controller
-our $VERSION = 'v3.0.6';
+our $VERSION = 'v3.0.8';
 
-##~ DIGEST : d9a25690fafa95fe6bbd92c0b649c437
+##~ DIGEST : fe3d645224146ebdf549ed9aa2c489af
 use strict;
 use warnings;
 
@@ -48,12 +48,13 @@ sub _setup {
 	my ( $self, $p ) = @_;
 	$p ||= {};
 
+	$self->standard_config();
+
 	$self->ControlByGui_coordinate_map( $self->config_file( $p->{coordinate_map} || './config/chitubox_coordinate_map.perl' ) );
 	$self->ControlByGui_values( $self->config_file( $p->{colour_values}          || './config/colour_values.perl' ) );
 
 	my $ui_config = Config::Any::Merge->load_files( {files => [qw{./config/ui.perl}], flatten_to_hash => 0} );
-	$self->ControlByGui_x_offset( 4014 );
-	$self->ControlByGui_coordinate_map->{console} = [ 2794, 1916 ];
+	$self->ControlByGui_zero_point( $self->ControlByGui_coordinate_map->{zero_point} );
 
 }
 
@@ -557,7 +558,7 @@ sub object_stack_to_bands {
 				y_dimension => $line->{$path}->[1],
 				done        => 0,
 			}
-		) or die "!?";
+		) or die "unknown db error !?";
 	}
 	my $row;
 	my @return;

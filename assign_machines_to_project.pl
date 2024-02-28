@@ -3,9 +3,9 @@ use strict;
 use warnings;
 
 # ABSTRACT: run SlicerController::import_work_list()
-our $VERSION = 'v1.0.5';
+our $VERSION = 'v1.0.6';
 
-##~ DIGEST : d94980b43099d925f81372df84da8289
+##~ DIGEST : f1a47f89290c98c27fe0c5acd8b0aa60
 
 BEGIN {
 	push( @INC, "./lib/" );
@@ -17,7 +17,7 @@ main( @ARGV );
 
 sub main {
 	my $self = SlicerController->new();
-	my ( $project_id, $machines ) = @_;
+	my ( $machines, $project_id ) = @_;
 
 	unless ( $project_id ) {
 		$project_id = "default";

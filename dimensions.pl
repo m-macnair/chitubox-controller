@@ -2,21 +2,21 @@
 use strict;
 use warnings;
 
-# ABSTRACT: run ChituboxController::import_work_list()
-our $VERSION = 'v1.0.3';
+# ABSTRACT: run SlicerController::import_work_list()
+our $VERSION = 'v1.0.4';
 
-##~ DIGEST : 8f2d7fd16a027be56b05de2d42ea965f
+##~ DIGEST : 52c21540748dda6c0b66450f2cde5fe8
 
 BEGIN {
 	push( @INC, "./lib/" );
 }
-use ChituboxController;
+use SlicerController;
 
 package main;
 main( @ARGV );
 
 sub main {
-	my $self     = ChituboxController->new();
+	my $self     = SlicerController->new();
 	my ( $path ) = @_;
 	my $res      = {db_file => $path};
 	$self->get_outstanding_dimensions( $res );
