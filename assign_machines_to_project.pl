@@ -2,21 +2,21 @@
 use strict;
 use warnings;
 
-# ABSTRACT: run ChituboxController::import_work_list()
-our $VERSION = 'v1.0.3';
+# ABSTRACT: run SlicerController::import_work_list()
+our $VERSION = 'v1.0.6';
 
-##~ DIGEST : 35384faa972632eb499c97e4b1f82e68
+##~ DIGEST : f1a47f89290c98c27fe0c5acd8b0aa60
 
 BEGIN {
 	push( @INC, "./lib/" );
 }
-use ChituboxController;
+use SlicerController;
 
 package main;
 main( @ARGV );
 
 sub main {
-	my $self = ChituboxController->new();
+	my $self = SlicerController->new();
 	my ( $machines, $project_id ) = @_;
 
 	unless ( $project_id ) {

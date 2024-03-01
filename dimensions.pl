@@ -2,23 +2,24 @@
 use strict;
 use warnings;
 
-# ABSTRACT: run ChituboxController::import_work_list()
-our $VERSION = 'v1.0.2';
+# ABSTRACT: run SlicerController::import_work_list()
+our $VERSION = 'v1.0.4';
 
-##~ DIGEST : 09a6853d530d28cb09ff19bbde643df8
+##~ DIGEST : 52c21540748dda6c0b66450f2cde5fe8
 
 BEGIN {
 	push( @INC, "./lib/" );
 }
-use ChituboxController;
+use SlicerController;
 
 package main;
 main( @ARGV );
 
 sub main {
-	my $self     = ChituboxController->new();
+	my $self     = SlicerController->new();
 	my ( $path ) = @_;
 	my $res      = {db_file => $path};
 	$self->get_outstanding_dimensions( $res );
+	$self->play_end_sound();
 }
 1;

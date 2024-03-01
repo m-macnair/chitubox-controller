@@ -1,8 +1,8 @@
 # ABSTRACT : Module for interacting with Chitubox using ControlByGui
 package Moo::GenericRole::ControlByGui::Chitubox;
-our $VERSION = 'v0.0.5';
+our $VERSION = 'v0.0.10';
 
-##~ DIGEST : abc02fba6923905323cf79637ba5dc09
+##~ DIGEST : 0f681289042d7d843551a93740cc4656
 use strict;
 use Moo::Role;
 use 5.006;
@@ -53,8 +53,8 @@ sub import_and_position {
 	my ( $self, $file, $xy, $rotate ) = @_;
 	$rotate ||= 0;
 	print "\tPlacing\n\t[$file]\n\t[ $xy->[0],$xy->[1]] rotating [$rotate]\n";
+	$self->adjust_sleep_for_file( $file );
 	$self->open_file( $file );
-
 	my $colour = $self->get_colour_at_coordinates( $self->ControlByGui_coordinate_map->{select_all} );
 	if ( $colour eq $self->ControlByGui_values->{colour}->{select_all_on} ) {
 		print "\tSelect all detected - disabling$/";
@@ -120,10 +120,13 @@ sub get_single_file_project_dimensions {
 	$self->click_to( 'open_project' );
 	$self->type_enter( $file );
 
+	$self->adjust_sleep_for_file( $file );
+	$self->dynamic_sleep();
 	$self->wait_for_progress_bar();
-	sleep( 1 );
+
 	my $ref = $self->get_current_dimensions();
 	$self->click_to( 'delete' );
+	$self->clear_dynamic_sleep();
 	return $ref;
 
 }
@@ -178,7 +181,53 @@ sub open_file {
 
 	#can be improved with copy paste facilty
 	$self->type_enter( $file );
+	$self->dynamic_sleep();
 	$self->wait_for_progress_bar();
+}
+
+sub export_file_all {
+	my ( $self, $out_path ) = @_;
+
+	return $self->_export_file( $out_path, {export_button_name => 'save_project_all_models'} );
+
+}
+
+sub export_file_single {
+	my ( $self, $out_path ) = @_;
+
+	return $self->_export_file( $out_path, {export_button_name => 'save_project_single'} );
+
+}
+
+sub _export_file {
+	my ( $self, $out_path, $p ) = @_;
+
+	$self->click_to( 'main_settings' );
+	$self->click_to( "hamburger" );
+	$self->move_to_named( 'save_project' ); # this is a hover menu so we need to give it time to appear
+	sleep( 1 );
+	$self->click_to( $p->{export_button_name} );
+
+	$self->type_enter( $out_path );
+	$self->wait_for_progress_bar();
+	$self->click_to( 'hamburger' );
+	return $out_path;
+
+}
+
+sub center_export_first_file {
+	my ( $self, $out_path, $p ) = @_;
+
+	#switch off export multi
+	if ( $self->if_colour_name_at_named( 'select_all_on', 'select_all' ) ) {
+		$self->click_to( 'select_all' );
+	}
+	$self->click_to( 'first_object' );
+	$self->position_selected( 0, 0 );
+	my $path = $self->export_file_single( $out_path, $p );
+	$self->wait_for_progress_bar();
+	return $path;
+
 }
 
 sub import_support_export_file {
@@ -197,16 +246,42 @@ sub import_support_export_file {
 	sleep( 1 );
 	$self->click_to( 'save_project_all_models' );
 	my $out_path = $opt->{out_path};
+
 	unless ( $out_path ) {
 		my ( $name, $dir, $suffix ) = $self->file_parse( $file );
 		my $new_path = qq{$dir/$name.chitubox};
 		$out_path = $self->safe_duplicate_path( $new_path );
 	}
 	print $out_path;
-	$self->type_enter( $out_path );
-	$self->wait_for_progress_bar();
-	$self->click_to( 'hamburger' );
-	return $out_path;
+
+}
+
+sub rotate_file_x {
+	my ( $self ) = @_;
+	for my $click_to (
+		qw/
+		rotate_menu
+		rotate_x45+
+		rotate_menu
+		/
+	  )
+	{
+		$self->click_to( $click_to );
+	}
+}
+
+sub rotate_file_y {
+	my ( $self ) = @_;
+	for my $click_to (
+		qw/
+		rotate_menu
+		rotate_y45+
+		rotate_menu
+		/
+	  )
+	{
+		$self->click_to( $click_to );
+	}
 }
 
 sub rotate_file_corner {
@@ -238,15 +313,22 @@ sub auto_supports {
 	  )
 	{
 		$self->click_to( $click_to );
-		sleep( 1 );
+		sleep( 3 );
+		$self->wait_for_progress_bar();
 	}
 	$self->wait_for_progress_bar();
 }
 
 sub wait_for_progress_bar {
 	my ( $self ) = @_;
-	my ( $x, $y ) = @{$self->ControlByGui_coordinate_map->{progress_bar_xy}};
+	my ( $x, $y ) = @{$self->get_named_xy_coordinates( 'progress_bar_xy' )};
 	$self->wait_for_pixel_colour( $x, $y, $self->ControlByGui_values()->{colour}->{progress_bar_clear} );
+}
+
+sub dynamic_wait_for_progress_bar {
+	my ( $self, $sleep, $p ) = @_;
+	$self->dynamic_sleep( $sleep, $p );
+	$self->wait_for_progress_bar();
 }
 
 sub wait_for_pixel_colour {
@@ -263,6 +345,21 @@ sub wait_for_pixel_colour {
 		$self->wait_for_pixel_colour( $x, $y, $wanted );
 	}
 	return;
+}
+
+sub set_select_all_on {
+	my ( $self ) = @_;
+	unless ( $self->if_colour_name_at_named( 'select_all_on', 'select_all' ) ) {
+		$self->click_to( 'select_all' );
+	}
+}
+
+sub set_select_all_off {
+	my ( $self ) = @_;
+	if ( $self->if_colour_name_at_named( 'select_all_on', 'select_all' ) ) {
+		$self->click_to( 'select_all' );
+	}
+
 }
 
 =head1 AUTHOR
