@@ -75,6 +75,21 @@ return {
 		#x_offset => 1.5, y_offset => .2
 	},
 
+	'm8' => {	
+		id          => 'm8',
+		x_dimension => 80,
+		y_dimension => 128,
+		margin      => $default_margin,
+
+		# 			menu_y_position => 495,
+		menu_y_position => get_menu_position_coord( 7 ),
+		#save_offset => [ 0, 55 ], #offset for the save dialogue button due to other options
+
+		x_offset => 0,
+		y_offset => -1
+	},
+	
+
 	'm1' => {
 		id          => 'm1',
 		x_dimension => 75,
@@ -82,7 +97,7 @@ return {
 		margin      => $default_margin,
 
 		#			menu_y_position => 335,
-		menu_y_position => get_menu_position_coord( 7 ),
+		menu_y_position => get_menu_position_coord( 8 ),
 
 		#'A' and 'D' in the offset menu?
 		x_offset => 0,
@@ -103,19 +118,7 @@ return {
 		y_offset => -1
 	},
 
-	'm8' => {	
-		id          => 'm8',
-		x_dimension => 80,
-		y_dimension => 128,
-		margin      => $default_margin,
 
-		# 			menu_y_position => 495,
-		menu_y_position => get_menu_position_coord( 11 ),
-		#save_offset => [ 0, 55 ], #offset for the save dialogue button due to other options
-
-		x_offset => 0,
-		y_offset => -1
-	},
 	
 	
 };

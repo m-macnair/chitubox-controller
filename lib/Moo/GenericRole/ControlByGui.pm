@@ -1,8 +1,8 @@
 # ABSTRACT : Module using various for interacting with a GUI application through perl
 package Moo::GenericRole::ControlByGui;
-our $VERSION = 'v0.0.8';
+our $VERSION = 'v0.0.9';
 
-##~ DIGEST : 1c3afbf36cb188410cba383cd56d0d53
+##~ DIGEST : 74510f089e69f3dd0692acc1fa1d7ea0
 use strict;
 use Moo::Role;
 use 5.006;
@@ -196,7 +196,7 @@ sub dynamic_sleep {
 
 sub dynamic_short_sleep {
 	my ( $self ) = @_;
-	$p ||= {};
+
 	my $sleep_for = ceil( ( $self->{sleep_for} || 1 ) / ( $self->config->{dynamic_sleep_short_divider} || 1 ) );
 	$sleep_for = 1 if $sleep_for < 1;
 	print "dynamic_short_sleep : $sleep_for$/";

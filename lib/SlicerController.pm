@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # ABSTRACT: Multi-purpose chitubox controller
-our $VERSION = 'v3.0.8';
+our $VERSION = 'v3.0.9';
 
-##~ DIGEST : fe3d645224146ebdf549ed9aa2c489af
+##~ DIGEST : ead012663469ae3a5cc96d17586707fe
 use strict;
 use warnings;
 
@@ -646,6 +646,9 @@ sub machine_select {
 	$p ||= {};
 	$self->wait_for_progress_bar();
 	$self->click_to( 'print_settings' );
+
+	#this causes a crash potentially?
+	sleep( 1 );
 	my $this_machine = $self->{machine_definitions}->{$machine_id};
 	die "Machine [$machine_id] not found" unless $this_machine;
 	print "$/\tSelecting [$machine_id] at ";
