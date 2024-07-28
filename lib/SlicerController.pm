@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # ABSTRACT: Multi-purpose chitubox controller
-our $VERSION = 'v3.0.9';
+our $VERSION = 'v3.0.11';
 
-##~ DIGEST : ead012663469ae3a5cc96d17586707fe
+##~ DIGEST : 331fc5348b0b347bc472c3981d3574ad
 use strict;
 use warnings;
 
@@ -12,11 +12,14 @@ use Moo;
 use Carp;
 use parent 'Moo::GenericRoleClass::CLI'; #provides  CLI, FileSystem, Common
 with qw/
-  Moo::GenericRole::ControlByGui
+
   Moo::GenericRole::ControlByGui::Chitubox
   Moo::GenericRole::FileIO::CSV
   Moo::GenericRole::ConfigAny
   Moo::GenericRole::DB::Working::AbstractSQLite
+  SlicerController::DB
+  Moo::Task::ControlByGui::Role::Core
+  Moo::Task::ControlByGui::Role::Linux
   /;                                     # AbstractSQLite is a wrapper class for all dbi actions
 
 use Data::Dumper;
@@ -58,78 +61,32 @@ sub _setup {
 
 }
 
-sub _do_db {
-	my ( $self, $res ) = @_;
-	$res ||= {};
-	if ( $res->{db_file} ) {
-		$self->sqlite3_file_to_dbh( $res->{db_file} );
-	} else {
-
-		#$self->setup_working_db_copy( './working_db.sqlite' );
-		$self->sqlite3_file_to_dbh( './db/working_db.sqlite' );
-	}
-}
-
-sub import_work_list {
-	my ( $self, $res ) = @_;
-	$self->_do_db( $res );
-	my $stack = $self->get_file_list( $res->{csv_file} );
-	my $project_id;
-	if ( $res->{project_id} ) {
-		$project_id = $res->{project_id};
-	} else {
-		$project_id = "default";
-		Carp::cluck( "no project id provided for import_work_list; set to [$project_id]" );
-	}
-
-	for my $project_row_href ( @{$stack} ) {
-
-		#print "processing $project_row_href->{path}$/";
-		my $file_row = $self->select( 'files', [qw/* rowid/], {file_path => $project_row_href->{path}} )->fetchrow_hashref;
-		unless ( $file_row ) {
-			$self->insert( 'files', {file_path => $project_row_href->{path}} );
-			$file_row = $self->select( 'files', [qw/* rowid/], {file_path => $project_row_href->{path}} )->fetchrow_hashref;
-		}
-		$project_row_href->{count} =~ s/^\s+|\s+$//g;
-		print "\tImporting  [$project_row_href->{count}] of [$project_row_href->{path}]$/";
-
-		while ( $project_row_href->{count} > 0 ) {
-
-			$self->insert(
-				'projects',
-				{
-					file_id => $file_row->{rowid},
-					project => $project_id
-				}
-			);
-			$project_row_href->{count}--;
-		}
-
-	}
-}
-
-#Open each .chitubox file in the file list that has not yet had dimensions set, and record them
+#Open each asset file in the file list that has not yet had dimensions set, and record them
+#TODO limit to specific project on param
 sub get_outstanding_dimensions {
 	my ( $self, $res ) = @_;
 	$self->_do_db( $res );
-	while ( my $file_row = $self->select( 'files', [qw/* rowid/], {x_dimension => undef} )->fetchrow_hashref() ) {
+	my $sql = 'select f.*,d.* from files f join dirs d on f.dir_id = d.id left join file_dimensions fd on f.id = fd.file_id ';
+	my $sth = $self->query( $sql );
 
-		if ( -f $file_row->{file_path} ) {
+	while ( my $file_row = $sth->fetchrow_hashref() ) {
+		my $file_path = $self->get_file_path( $file_row->{id} );
+		if ( -f $file_path ) {
 
-			my $dim = $self->get_single_file_project_dimensions( $file_row->{file_path} );
-			$self->update(
-				'files',
-				{
-					x_dimension => $dim->[0],
-					y_dimension => $dim->[1],
-					z_dimension => $dim->[2],
-				},
-				{
-					rowid => $file_row->{rowid}
-				}
-			);
+			# 			my $dim = $self->get_single_file_project_dimensions( $file_row->{file_path} );
+			# 			$self->update(
+			# 				'files',
+			# 				{
+			# 					x_dimension => $dim->[0],
+			# 					y_dimension => $dim->[1],
+			# 					z_dimension => $dim->[2],
+			# 				},
+			# 				{
+			# 					rowid => $file_row->{rowid}
+			# 				}
+			# 			);
 		} else {
-			warn "[$file_row->{file_path}] not found for file [$file_row->{rowid}], skipping $/";
+			warn "[$file_path] not found for file [$file_row->{id}], skipping $/";
 		}
 	}
 }
@@ -211,48 +168,6 @@ sub export_plate_as_single_file_projects {
 		$has_remaining = $self->if_colour_name_at_named( 'highlighted_in_objects', 'first_object' );
 
 	} while ( $has_remaining );
-
-}
-
-#turn csv file into <number> <filepath>
-sub get_file_list {
-	my ( $self, $csv_file ) = @_;
-	my @stack;
-	$self->sub_on_csv(
-		sub {
-			my ( $row ) = @_;
-			my ( $x, $y, $z ) = @{$row};
-
-			return 1 unless ( $x );
-			my $file_path;
-			if ( -d $y ) {
-				$file_path = "$y/$z";
-			} else {
-				$file_path = $y;
-			}
-			$file_path =~ s|//|/|g;
-			$file_path =~ s/\s+$//g;
-			chomp( $file_path );
-			if ( -e $file_path ) {
-				push( @stack, {count => $x, path => $file_path} );
-
-			} else {
-				my $alt = $file_path;
-				$alt =~ s| |\ |g;
-				if ( -e $alt ) {
-					warn "spaces problem on [$alt]";
-					push( @stack, {count => $x, path => $file_path} );
-				} else {
-
-					warn( "[$file_path] not found" );
-					$self->dynamic_sleep();
-				}
-			}
-			return 1;
-		},
-		$csv_file
-	);
-	return \@stack;
 
 }
 
