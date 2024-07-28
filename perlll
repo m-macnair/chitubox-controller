@@ -1,0 +1,2 @@
+#!/bin/bash
+perl -I ./lib/ -I "./foreign/Moo-Task-FileDB/lib/" -I "./foreign/Moo-GenericRole/lib/" -I "./foreign/Moo-Task-ControlByGui/lib/" "$@"

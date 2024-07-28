@@ -1,0 +1,12 @@
+[submodule "foreign/Moo-Task-File-DB"]
+	path = foreign/Moo-Task-File-DB
+	url = https://github.com/m-macnair/Moo-Task-FileDB.git
+[submodule "foreign/Moo-Task-FileDB"]
+	path = foreign/Moo-Task-FileDB
+	url = https://github.com/m-macnair/Moo-Task-FileDB.git
+[submodule "foreign/Moo-GenericRole"]
+	path = foreign/Moo-GenericRole
+	url = https://github.com/m-macnair/Moo-GenericRole.git
+[submodule "foreign/Moo-Task-ControlByGui"]
+	path = foreign/Moo-Task-ControlByGui
+	url = https://github.com/m-macnair/Moo-Task-ControlByGui.git
