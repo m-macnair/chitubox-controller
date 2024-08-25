@@ -7,6 +7,7 @@ sub get_menu_position_coord {
 
 	#y345 is the starting position including the vertical offset ; the positions are relative to the top left of the menu, not the screen
 	#consequently the y offset should be <something> - 220 to be absolute
+	#this starts at 0
 	my $button_height     = 39;        #from top of the button to the top of the next button - 1 ; 39 px
 	my $mid_point         = 20;
 	my $starting_position = 340 - 220 + $button_height; # bottom of first machine button
@@ -21,7 +22,7 @@ return {
 		margin      => $default_margin,
 
 		# 			menu_y_position => 165,
-		menu_y_position => get_menu_position_coord( 1 ),
+		menu_y_position => get_menu_position_coord( 0 ),
 
 		#x_offset => 2,   y_offset => 40
 	},
@@ -32,7 +33,7 @@ return {
 		margin      => $default_margin,
 
 		# 			menu_y_position => 215,
-		menu_y_position => get_menu_position_coord( 2 ),
+		menu_y_position => get_menu_position_coord( 0 ),
 
 		y_offset => 59.5 / 2,
 	},
@@ -44,7 +45,7 @@ return {
 		margin      => $default_margin,
 
 		#			menu_y_position => 245,
-		menu_y_position => get_menu_position_coord( 3 ),
+		menu_y_position => get_menu_position_coord( 1 ),
 		x_offset => 4,
 		y_offset => 0
 	},
@@ -56,7 +57,7 @@ return {
 		margin      => $default_margin,
 
 		# 			menu_y_position => 285,
-		menu_y_position => get_menu_position_coord( 4 ),
+		menu_y_position => get_menu_position_coord( 3 ),
 
 		x_offset => -2,
 		y_offset => -5
@@ -111,13 +112,26 @@ return {
 		margin      => $default_margin,
 
 		# 			menu_y_position => 495,
-		menu_y_position => get_menu_position_coord( 10 ),
+		menu_y_position => get_menu_position_coord( 9 ),
 		save_offset => [ 0, 55 ], #offset for the save dialogue button due to other options - for network attached printers
 
 		x_offset => 1,
 		y_offset => -1
 	},
 
+	'm9' => {
+		id          => 'm9',
+		x_dimension => 188,
+		y_dimension => 116,
+		margin      => $default_margin,
+
+		# 			menu_y_position => 495,
+		menu_y_position => get_menu_position_coord( 7 ),
+		save_offset => [ 0, 55 ], #offset for the save dialogue button due to other options - for network attached printers
+
+		x_offset => 1,
+		y_offset => -1
+	},
 
 	
 	
