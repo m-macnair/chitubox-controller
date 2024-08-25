@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # ABSTRACT: DB Setup and import methods
-our $VERSION = 'v3.0.12';
+our $VERSION = 'v3.0.14';
 
-##~ DIGEST : 223dc522a5b9b2c56deaf7fba474e954
+##~ DIGEST : dd2d56e2ae1497bfad07ab888f94d806
 use strict;
 use warnings;
 
@@ -34,49 +34,19 @@ sub _do_db {
 		unless ( -e $db_path ) {
 
 			DBSETUP: {
-				unless ( -d './db/' ) { mkdir( './db/' ); }
-				open( my $fh, ">", $db_path );
-				print $fh '';
-				close( $fh );
-				$self->sqlite3_file_to_dbh( $db_path );
-				$self->init_db_schema();
+				warn( 'DB Initialisation no longer valid' );
 
-				my $sql = <<'SQL';
-	
-	CREATE TABLE projects (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		name TEXT NOT NULL UNIQUE
-	);
-	
-	CREATE TABLE plates (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		machine TEXT NOT NULL
-	);
-
-	CREATE TABLE project_elements (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		project_id INTEGER,
-		file_id INTEGER,
-		plate_id INTEGER,
-		x_position REAL,
-		y_position REAL,
-		rotate REAL
-	);
-	CREATE INDEX project_elements_plate_id ON project_elements(plate_id); 
-	CREATE INDEX project_elements_project_name ON project_elements(project_id); 
-	
-	CREATE TABLE file_dimensions (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		file_id INTEGER,
-		x_dimension REAL,
-		y_dimension REAL,
-		z_dimension REAL
-	);
-	CREATE INDEX file_dimensions_file_id ON file_dimensions(file_id); 
-SQL
-				for my $st ( split( /;/, $sql ) ) {
-					$self->dbh->do( $st ) or die $!;
-				}
+				# 				unless ( -d './db/' ) { mkdir( './db/' ); }
+				# 				open( my $fh, ">", $db_path );
+				# 				print $fh '';
+				# 				close( $fh );
+				# 				$self->sqlite3_file_to_dbh( $db_path );
+				# 				$self->init_db_schema();
+				# 				die "obsolete db schema about to be used";
+				#
+				# 				for my $st ( split( /;/, $sql ) ) {
+				# 					$self->dbh->do( $st ) or die $!;
+				# 				}
 			}
 			return 1;
 
@@ -90,39 +60,40 @@ sub import_work_list {
 	my ( $self, $p ) = @_;
 	$self->_do_db( $p );
 	my $stack = $self->get_file_list( $p->{csv_file} );
-	my $project_name;
-	if ( $p->{project_name} ) {
-		$project_name = $p->{project_name};
+	my $work_order_name;
+	if ( $p->{work_order_name} ) {
+		$work_order_name = $p->{work_order_name};
 	} else {
-		$project_name = "default";
-		warn( "no project id provided for import_work_list; set to [$project_name]" );
+		$work_order_name = "default";
+		warn( "no work_order id provided for import_work_list; set to [$work_order_name]" );
 	}
 
-	my $project_row = $self->select_insert_href( 'projects', {name => $project_name}, [qw/* rowid/] );
+	my $work_order_row = $self->select_insert_href( 'work_order', {name => $work_order_name}, [qw/* id/] );
 
-	for my $project_row_href ( @{$stack} ) {
-		print "processing $project_row_href->{path}$/";
-		my $file_id = $self->get_file_id( $project_row_href->{path} );
-		while ( $project_row_href->{count} > 0 ) {
+	for my $work_order_row_href ( @{$stack} ) {
+		print "processing $work_order_row_href->{path}$/";
+		my $file_id = $self->get_file_id( $work_order_row_href->{path} );
+		while ( $work_order_row_href->{count} > 0 ) {
 			$self->insert(
-				'project_elements',
+				'work_order_element',
 				{
-					file_id    => $file_id,
-					project_id => $project_row->{rowid}
+					file_id       => $file_id,
+					work_order_id => $work_order_row->{id}
 				}
 			);
-			$project_row_href->{count}--;
+			$work_order_row_href->{count}--;
 		}
 
 	}
 }
 
-sub get_project_id {
+sub get_work_order_id {
 	my ( $self, $string ) = @_;
+	die "yes";
 	Carp::Confess( 'String not provided' ) unless $string;
-	my $project_row = $self->select( 'projects', {name => $string} )->fetchrow_hashref();
-	Carp::Confess( 'Project row not found' ) unless $project_row;
-	return $project_row->{id};
+	my $row = $self->select( 'work_orders', {name => $string} )->fetchrow_hashref();
+	Carp::Confess( 'Work Order row not found' ) unless $row;
+	return $row->{id};
 
 }
 
