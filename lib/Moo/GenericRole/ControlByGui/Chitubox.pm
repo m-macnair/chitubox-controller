@@ -1,8 +1,8 @@
 # ABSTRACT : Module for interacting with Chitubox using ControlByGui
 package Moo::GenericRole::ControlByGui::Chitubox;
-our $VERSION = 'v0.0.10';
+our $VERSION = 'v0.0.11';
 
-##~ DIGEST : 0f681289042d7d843551a93740cc4656
+##~ DIGEST : 184c4e50051f14fb4cc5ea3c70fe4162
 use strict;
 use Moo::Role;
 use 5.006;
@@ -16,6 +16,21 @@ use List::Util 'first';
 	1.0.0 - 2023-11-18
 		Port from chitubox_controller_3.pl
 =cut
+
+ACCESSORS: {
+	has chitubox_pid => (
+		is   => 'rw',
+		lazy => 1,
+	);
+}
+
+MODIFIERS: {
+	around "check_application_status" => sub {
+		my $orig = shift;
+		my $self = shift;
+		return $self->determine_chitubox_status();
+	};
+}
 
 sub place_stl {
 	my ( $self, $row, $x_current, $y_current ) = @_;
@@ -177,11 +192,123 @@ sub open_file {
 
 	$self->click_to( 'main_settings' );
 	$self->click_to( "hamburger" );
-	$self->click_to( "open" );
+	$self->hover_click( "open" );
 
-	#can be improved with copy paste facilty
+	#can be improved with copy paste facilty perhaps
 	$self->type_enter( $file );
 	$self->dynamic_sleep();
+	$self->wait_for_progress_bar();
+}
+
+sub machine_select {
+	my ( $self, $machine_id, $p ) = @_;
+	$p ||= {};
+	$self->wait_for_progress_bar();
+	$self->click_on( 'print_settings' );
+
+	#this causes a crash potentially?
+	sleep( 1 );
+	my $this_machine = $self->{machine_definitions}->{$machine_id};
+	die "Machine [$machine_id] not found" unless $this_machine;
+	print "$/\tSelecting [$machine_id] at ";
+	$self->move_to_named( 'printer_select', {y_mini_offset => $this_machine->{menu_y_position}} );
+	$self->dynamic_sleep(); #highlight transitions cause crashes
+	$self->click();
+	$self->dynamic_sleep(); #highlight transitions cause crashes
+	$self->move_to_named( 'close_print_settings' );
+	$self->dynamic_sleep(); #highlight transitions cause crashes
+	$self->click_on( 'close_print_settings' );
+
+}
+
+sub slice_and_save_plate {
+	my ( $self, $plate_id, $p ) = @_;
+	$p ||= {};
+	$self->click_on( 'viewing_angle' );
+	my $plate_row = $self->query( "select * from plate where id = ?", $plate_id )->fetchrow_hashref();
+
+	my $this_machine = $self->{machine_definitions}->{$plate_row->{machine}};
+
+	my $o_dir;
+	unless ( $p->{o_dir} ) {
+		$o_dir = $self->config->{sliced_files_directory};
+	}
+
+	#TODO make this actually a write check; add sugar
+	die "output path [$o_dir] not writable" unless -d $o_dir;
+
+	my $plate_name_string;
+	GETPLATENAMESTRING: {
+		my $name_query_sth = $self->query( 'select distinct(wo.name) from plate join work_order_element woe on woe.plate_id = plate.id join work_order wo on woe.work_order_id = wo.id where plate.id =? order by name desc', $plate_id );
+
+		while ( my $row = $name_query_sth->fetchrow_arrayref() ) {
+			if ( $plate_name_string ) {
+				$plate_name_string .= ",$row->[0]";
+			} else {
+				$plate_name_string = $row->[0];
+			}
+		}
+
+		#[ and ] not allowed in file names
+		$plate_name_string = sprintf( '%s-%s-%s', lc( $plate_row->{machine} ), $plate_name_string, $plate_id );
+	}
+
+	my $extra_path             = $self->make_path( "$o_dir/$plate_name_string\_extra" );
+	my $backup_project_path    = $self->export_file_all( "$extra_path/$plate_name_string\_backup_project.chitubox" );
+	my $backup_project_file_id = $self->get_file_id( $backup_project_path );
+
+	$self->insert( 'plate_files', {file_id => $backup_project_file_id, plate_id => $plate_id, type => 'backup project'} );
+
+	$self->wait_for_progress_bar();
+	$self->hover_click( 'slice_button' );
+
+	print "$/Checking for over limit warning$/";
+	if ( $self->if_colour_name_at_named( 'over_plate_yes_button', 'slice_platform_yes' ) ) {
+		$self->hover_click( 'slice_platform_yes' );
+		print "$/\t GOING OVER LIMIT$/";
+		$self->dynamic_sleep();
+	}
+
+	#waiting for slice preview to finish
+	$self->wait_for_progress_bar();
+	$self->hover_click( 'slice_save', {offset => $this_machine->{save_offset} || []} );
+	$self->dynamic_sleep();
+
+	my $o_path = "$o_dir/$plate_name_string.ctb";
+	if ( -e $o_path ) {
+
+		#TODO: sound prompt? console prompt?
+		print "[$o_path] already exists!";
+	}
+
+	my $measure_path = "$extra_path/$plate_name_string\_measurements.png";
+	my $preview_path = "$extra_path/$plate_name_string\_preview.png";
+	unlink( $measure_path ) if -e $measure_path;
+	unlink( $preview_path ) if -e $measure_path;
+
+	#TODO add margins as this does not work right now
+	# 	print `import -window root -quality 95 -compress none -negate -crop 330x225+1650+235 $measure_path`;
+	# 	print `import -window root -quality 50 -crop 1000x1000+100+100 $preview_path`;
+	$o_path = $self->safe_duplicate_path( $o_path );
+
+	print "$/\tsaving to $o_path$/";
+	$self->type_enter( $o_path );
+	$self->dynamic_wait_for_progress_bar();
+	unless ( -f $o_path ) {
+		$self->play_sound();
+		die "Unknown failure - output file not created";
+	}
+	my $output_file_id = $self->get_file_id( $o_path );
+	$self->insert( 'plate_files', {file_id => $output_file_id, plate_id => $plate_id, type => 'sliced file'} );
+	$self->click_on( 'slice_back' );
+}
+
+sub clear_plate {
+	my ( $self ) = @_;
+	unless ( $self->if_colour_name_at_named( 'select_all_on', 'select_all' ) ) {
+		$self->click_on( 'select_all' );
+	}
+	$self->click_on( 'delete_object' );
 	$self->wait_for_progress_bar();
 }
 
@@ -359,6 +486,132 @@ sub set_select_all_off {
 	if ( $self->if_colour_name_at_named( 'select_all_on', 'select_all' ) ) {
 		$self->click_to( 'select_all' );
 	}
+
+}
+
+sub get_chitubox_pid {
+	my ( $self ) = @_;
+	if ( $self->chitubox_pid() ) {
+		return $self->chitubox_pid();
+	} else {
+		my @output = `ps -ef | grep \./Chitubox`;
+		for my $line ( @output ) {
+			if ( $line =~ "./Chitubox$/" && index( $line, 'grep' ) == -1 ) {
+				my @fields = split( /\s+/, $line );
+				$self->chitubox_pid( $fields[1] );
+				return $self->chitubox_pid();
+			}
+		}
+		Carp::cluck( 'Chitubox PID could not be determined from ps -ef' );
+		return 0;
+	}
+}
+
+sub determine_chitubox_status {
+	my ( $self )     = @_;
+	my $chitubox_pid = $self->get_chitubox_pid();
+	my @output       = `ps -fp $chitubox_pid`;
+	for my $line ( @output ) {
+		if ( $line =~ "./Chitubox$/" ) {
+			return 1;
+		}
+	}
+	$self->play_sound();
+	Carp::confess( "Chitubox PID [$chitubox_pid] did not return a valid process ID from ps -fp - Chitubox probably crashed" );
+	return 0;
+}
+
+sub clear_for_project {
+	my ( $self ) = @_;
+	$self->clear_plate();
+	$self->dynamic_sleep();
+	$self->click_on( "hamburger" );
+	$self->dynamic_sleep();
+	$self->clear_dynamic_sleep();
+
+	#this may fix a crash caused by the highlight not having time to show
+	$self->hover_click( 'new_project' );
+	$self->dynamic_sleep();
+
+}
+
+=head2 export_plate_as_single_file_projects
+	export a working plate with multiple projects as multiple individual projects - these are the items to actually print 
+=cut
+
+sub export_plate_as_single_file_projects {
+	my ( $self, $out_dir, $p ) = @_;
+	unless ( $out_dir ) {
+		print "Output directory defaulting to ./";
+		$out_dir = './';
+	}
+	die "Invalid directory [$out_dir]" unless ( -d $out_dir );
+
+	$p ||= {};
+	my $has_remaining;
+	do {
+		$self->set_select_all_off();
+		$self->click_on( 'first_object' );
+
+		#better contrast when the target item is the one highlighted after the select all has been turned off
+		$self->click_on( 'select_all' );
+
+		my $path = $self->tmp_dir;
+		$path = './working_mono.png';
+		print `import -window root -quality 95 -compress none -negate -crop 275x27+1630+225 $path`;
+		my $text = get_ocr( $path );
+
+		unless ( $text ) {
+			warn "no text returned from OCR";
+			$text = "file_" . int( rand( 100_000 ) );
+		}
+		$text =~ s/[^\x00-\x7F]/_/g;
+		$text = lc( $text );
+		$text =~ s/\#.*//;
+		$text =~ s/stl^//;
+		$text =~ s/obj^//;
+		$text =~ s/\.//;
+		$text = substr( $text, 1 );
+		$text =~ s/^\s+|\s+$//g;
+		$text =~ s/\s/_/g;
+
+		$self->click_on( 'first_object' ); # actually select the first object
+		$self->position_selected( 0, 0 );
+
+		my $out_path = $self->safe_duplicate_path( "$out_dir/$text.chitubox" );
+		$self->click_on( 'main_settings' );
+		$self->click_on( "hamburger" );
+		$self->move_to_named( 'save_project' ); # this is a hover menu so we need to give it time to appear
+		$self->dynamic_sleep();
+		$self->click_on( 'save_project_single' );
+		$self->type_enter( $out_path );
+
+		#Today the lesson is - 1. wait for progress always and 2. lock the screen (smartly) when an action is actioning in  a gui application
+		$self->wait_for_progress_bar();
+		unless ( $p->{skip} ) {
+			my $dim = $self->get_current_dimensions();
+
+			$self->insert(
+				'files',
+				{
+					file_path   => $out_path,
+					x_dimension => $dim->[0],
+					y_dimension => $dim->[1],
+					z_dimension => $dim->[2],
+				}
+			);
+		}
+
+		$self->click_on( 'first_object' );
+
+		$self->click_on( 'delete_object' );
+
+		#check if more objects remain
+		$self->click_on( 'first_object' );
+
+		$has_remaining = $self->if_colour_name_at_named( 'highlighted_in_objects', 'first_object' );
+
+	} while ( $has_remaining );
 
 }
 
