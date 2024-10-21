@@ -1,8 +1,8 @@
 # ABSTRACT : Module for interacting with Chitubox using ControlByGui
 package Moo::GenericRole::ControlByGui::Chitubox;
-our $VERSION = 'v0.0.11';
+our $VERSION = 'v0.0.12';
 
-##~ DIGEST : 184c4e50051f14fb4cc5ea3c70fe4162
+##~ DIGEST : 42faacbb008a7e6de74d10b6f926d4cd
 use strict;
 use Moo::Role;
 use 5.006;
@@ -192,7 +192,7 @@ sub open_file {
 
 	$self->click_to( 'main_settings' );
 	$self->click_to( "hamburger" );
-	$self->hover_click( "open" );
+	$self->hover_click_named( "open" );
 
 	#can be improved with copy paste facilty perhaps
 	$self->type_enter( $file );
@@ -260,18 +260,18 @@ sub slice_and_save_plate {
 	$self->insert( 'plate_files', {file_id => $backup_project_file_id, plate_id => $plate_id, type => 'backup project'} );
 
 	$self->wait_for_progress_bar();
-	$self->hover_click( 'slice_button' );
+	$self->hover_click_named( 'slice_button' );
 
 	print "$/Checking for over limit warning$/";
 	if ( $self->if_colour_name_at_named( 'over_plate_yes_button', 'slice_platform_yes' ) ) {
-		$self->hover_click( 'slice_platform_yes' );
+		$self->hover_click_named( 'slice_platform_yes' );
 		print "$/\t GOING OVER LIMIT$/";
 		$self->dynamic_sleep();
 	}
 
 	#waiting for slice preview to finish
 	$self->wait_for_progress_bar();
-	$self->hover_click( 'slice_save', {offset => $this_machine->{save_offset} || []} );
+	$self->hover_click_named( 'slice_save', {offset => $this_machine->{save_offset} || []} );
 	$self->dynamic_sleep();
 
 	my $o_path = "$o_dir/$plate_name_string.ctb";
@@ -530,7 +530,7 @@ sub clear_for_project {
 	$self->clear_dynamic_sleep();
 
 	#this may fix a crash caused by the highlight not having time to show
-	$self->hover_click( 'new_project' );
+	$self->hover_click_named( 'new_project' );
 	$self->dynamic_sleep();
 
 }

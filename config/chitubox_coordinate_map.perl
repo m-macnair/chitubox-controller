@@ -1,6 +1,6 @@
 return {
 	#This is the bit which must change when moving the chitubox application between screens
-	zero_point     => [ 3840,  0 ],
+	zero_point     => [ 1920,  0 ],
 	hamburger      => [ 35, 75 ],
 	'new_project'  => [ 10, 115 ],
 	'open'         => [ 10, 220 ],

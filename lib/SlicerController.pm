@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # ABSTRACT: Multi-purpose chitubox controller and root module of the project
-our $VERSION = 'v3.0.13';
+our $VERSION = 'v3.0.14';
 
-##~ DIGEST : 535eedd15fb4ef59105c90db69c16532
+##~ DIGEST : 9055ad8370ee2d6ff800a9fe43a2d5f2
 use strict;
 use warnings;
 
@@ -104,13 +104,14 @@ sub get_basic_dimensions {
 		on f.id = m.file_id
 	where fd.file_id is null
 	and (m.is_supported = 1 or m.file_id is null )
-	and m.no_dimensions != 1;
+	and ( m.no_dimensions != 1 or m.no_dimensions is null)
+		
 SQL
 	my $sth = $self->query( $sql );
 
 	while ( my $file_row = $sth->fetchrow_hashref() ) {
-
-		my $file_path = $self->get_file_path( $file_row->{id} );
+		my $file_path = $self->get_file_path_from_id( $file_row->{id} );
+		print "[$file_path] retrieved for file [$file_row->{id}] $/";
 		if ( -f $file_path ) {
 			$self->clear_for_project();
 			my $dim = $self->get_single_file_project_dimensions( $file_path );
@@ -399,7 +400,7 @@ sub place_on_plate {
 			return;
 		}
 		print "\tPlacing with original position of [$row->{x_position},$row->{y_position}]$/";
-		my $file_path = $self->get_file_path( $row->{file_id} );
+		my $file_path = $self->get_file_path_from_id( $row->{file_id} );
 		$self->import_and_position(
 			$file_path,
 

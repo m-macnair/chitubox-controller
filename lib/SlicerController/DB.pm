@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # ABSTRACT: DB Setup and import methods
-our $VERSION = 'v3.0.14';
+our $VERSION = 'v3.0.15';
 
-##~ DIGEST : dd2d56e2ae1497bfad07ab888f94d806
+##~ DIGEST : 187915ad33f45763cde9282ff3754e69
 use strict;
 use warnings;
 
@@ -16,7 +16,6 @@ with qw/
   Moo::Task::FileDB::Role::Core
   Moo::Task::FileDB::Role::Linux
   Moo::GenericRole::DB::Working::AbstractSQLite
-  Moo::Task::FileDB::Role::DB::SQLite::Setup
   Moo::Task::FileDB::Role::DB::AbstractSQLite
 
   Moo::GenericRole::FileIO::CSV
@@ -90,7 +89,7 @@ sub import_work_list {
 sub get_work_order_id {
 	my ( $self, $string ) = @_;
 	die "yes";
-	Carp::Confess( 'String not provided' ) unless $string;
+	Carp::confess( 'String not provided' ) unless $string;
 	my $row = $self->select( 'work_orders', {name => $string} )->fetchrow_hashref();
 	Carp::Confess( 'Work Order row not found' ) unless $row;
 	return $row->{id};
