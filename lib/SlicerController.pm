@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # ABSTRACT: Multi-purpose chitubox controller and root module of the project
-our $VERSION = 'v3.0.16';
+our $VERSION = 'v3.0.17';
 
-##~ DIGEST : 78ae8637f2554dbf59982103435efb0e
+##~ DIGEST : 250a5bba3e5db0cbcaee422943bd1dd0
 use strict;
 use warnings;
 
@@ -34,7 +34,7 @@ with qw/
   Moo::GenericRole::FileIO::CSV
   Moo::GenericRole::ConfigAny
   Moo::GenericRole::DB::Working::AbstractSQLite
-  SlicerController::DB
+  SlicerController::Role::GeneralDB
   Moo::Task::ControlByGui::Role::Core
   Moo::Task::ControlByGui::Role::Linux
   /;                                     # AbstractSQLite is a wrapper class for all dbi actions

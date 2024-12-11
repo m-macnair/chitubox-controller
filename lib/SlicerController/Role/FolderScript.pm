@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # ABSTRACT: wrapper role for common script operations
-our $VERSION = 'v3.0.18';
+our $VERSION = 'v3.0.19';
 
-##~ DIGEST : 244709099c982c4365530d81aba3b1fb
+##~ DIGEST : 102a676cc6af11d5883edc6e3c37c85b
 use strict;
 use warnings;
 
@@ -11,21 +11,17 @@ package SlicerController::Role::FolderScript;
 use v5.10;
 use Moo::Role;
 
-use Carp;
-
+use Carp qw/confess/;
+use SlicerController::Class::FolderAutomationDB;
 ACCESSORS: {
 
-	has project_config => (
-		is   => 'rw',
-		lazy => 1,
-	);
-	has automation_paths => (
+	has folder_config => (
 		is      => 'rw',
 		lazy    => 1,
 		default => sub { return {} },
 	);
 
-	has directory_db => (
+	has fdb => (
 		is   => 'rw',
 		lazy => 1,
 	);
@@ -46,40 +42,42 @@ sub setup_suite_root {
 	return $self->{suite_root};
 }
 
-sub set_asset_project_config {
+sub load_folder_config {
 	my ( $self, $config_path ) = @_;
-	$self->project_config( $self->get_asset_project_config( $config_path ) );
+	$self->folder_config( $self->get_asset_folder_config( $config_path ) );
 
 }
 
-sub get_asset_project_config {
+sub get_asset_folder_config {
 	my ( $self, $config_path ) = @_;
-	$config_path ||= './current_automation_project/config.perl';
+	$config_path ||= $self->abs_path( $self->suite_root() . '/current_config.perl' );
 
-	die "Config [$config_path] not supplied" unless -f $config_path || -l $config_path;
-	my $project_config = $self->config_file( $config_path );
+	die "Config [$config_path] not found" unless $self->is_a_file( $config_path );
+	my $folder_config = $self->config_file( $config_path );
 	for my $key (
-		qw/root_path
+		qw/
+		root_path
 		source_wanted_path
-		chitubox_part_path
+		production_part_path
+		chitubox_controller_root
 		/
 	  )
 	{
-		die "required key $key missing" unless ( $project_config->{$key} );
+		die "required key $key missing" unless ( $folder_config->{$key} );
 	}
 
-	return $project_config;
+	return $folder_config;
 }
 
 sub script_setup {
 	my ( $self, $p ) = @_;
 	$p ||= {};
-
-	$self->_setup();
-	$self->_do_db();
+	$self->load_folder_config();
+	$self->load_fdb();
 
 }
 
+#TODO: generic?
 sub single_or_file {
 	my ( $self, $path ) = @_;
 
@@ -96,29 +94,24 @@ sub single_or_file {
 	}
 }
 
-sub script_single_or_file {
-	my ( $self, $path ) = @_;
-
-}
-
-sub setup_directory_db {
+sub setup_fdb {
 	my ( $self, $db_file, $chitubox_controller_root ) = @_;
-	die "cannot determine chitubox_controller_root value" unless $chitubox_controller_root;
-	use Class::FolderAutomationDB;
+	confess "cannot determine chitubox_controller_root value" unless $chitubox_controller_root;
+
 	unless ( -f $db_file ) {
-		open my $fh, '>', $db_file or die "Cannot create file: $!";
+		open my $fh, '>', $db_file or confess "Cannot create db file [$db_file]: $!";
 		close $fh;
 	}
-	my $ddb = Class::FolderAutomationDB->new(
+	my $fdb = Class::FolderAutomationDB->new(
 		{
 			sqlite_path => $db_file,
 		}
 	);
 
-	$ddb->sqlite3_file_to_dbh( $db_file );
+	$fdb->sqlite3_file_to_dbh( $db_file );
 
-	unless ( $ddb->table_exists( 'file' ) ) {
-		$ddb->execute_file( "$chitubox_controller_root/foreign/Moo-Task-FileDB/etc/db/core.sql" );
+	unless ( $fdb->table_exists( 'file' ) ) {
+		$fdb->execute_file( "$chitubox_controller_root/foreign/Moo-Task-FileDB/etc/db/core.sql" );
 	}
 
 	for my $table_name (
@@ -126,70 +119,62 @@ sub setup_directory_db {
 		original_file
 		wanted_file
 		source_to_part
-
+		original_as_part
 		/
 	  )
 	{
-		unless ( $ddb->table_exists( $table_name ) ) {
-			$ddb->execute_file( "$chitubox_controller_root/etc/db/automation_sub_db/$table_name.sql" );
+		unless ( $fdb->table_exists( $table_name ) ) {
+			$fdb->execute_file( "$chitubox_controller_root/etc/db/automation_sub_db/$table_name.sql" );
 		}
 	}
-	return $ddb;
+	return $fdb;
 }
 
-sub load_automation_paths {
+#this should only ever be done once in script/1/1 and read from config thereafter
+sub generate_folder_config {
 	my ( $self, $target_directory ) = @_;
-	$target_directory ||= $self->project_config()->{root_path};
+	$target_directory ||= $self->folder_config()->{root_path};
 	die "target directory not set" unless $target_directory;
 	$target_directory = $self->abs_path( $target_directory );
-	my $ap = $self->automation_paths();
-	$ap->{master_folder} = "$target_directory/production_automation";
-	$ap->{sources_path}  = "$ap->{master_folder}/source";
-	$ap->{chitubox_path} = "$ap->{master_folder}/chitubox";
-	$ap->{master_folder} =~ s|//|/|g;
-	$ap->{sources_path}  =~ s|//|/|g;
-	$ap->{chitubox_path} =~ s|//|/|g;
+	my $fc = $self->folder_config();
+	$fc->{master_folder}   = "$target_directory/production_automation";
+	$fc->{sources_path}    = "$fc->{master_folder}/source";
+	$fc->{production_path} = "$fc->{master_folder}/production";
+	$fc->{master_folder}   =~ s|//|/|g;
+	$fc->{sources_path}    =~ s|//|/|g;
+	$fc->{production_path} =~ s|//|/|g;
 
-	( undef, $ap->{target_directory_parent} ) = $self->file_parse( $target_directory );
-	$self->automation_paths( $ap );
-	$self->init_automation_paths();
-	$self->load_ddb();
-	return $ap;
+	( undef, $fc->{target_directory_parent} ) = $self->file_parse( $target_directory );
+	$self->folder_config( $fc );
+	return $self->folder_config();
 
 }
 
-sub set_relative_path {
-	my ( $self, $script_path ) = @_;
-	my ( undef, $dir )         = $self->file_parse( $script_path );
-	my $ap = $self->automation_paths();
-	$ap->{chitubox_controller_root} = "$dir/../../";
-}
-
-sub load_ddb {
+sub load_fdb {
 	my ( $self ) = @_;
-	my $ap       = $self->automation_paths();
-	my $ddb      = $self->setup_directory_db( "$ap->{master_folder}/files.db", $ap->{chitubox_controller_root} );
-	$self->directory_db( $ddb );
+	my $fc       = $self->folder_config();
+	my $fdb      = $self->setup_fdb( "$fc->{master_folder}/files.db", $fc->{chitubox_controller_root} );
+	return $self->fdb( $fdb );
 
 }
 
-sub init_automation_paths {
+sub init_folder_config {
 	my ( $self ) = @_;
-	my $ap = $self->automation_paths();
+	my $fc = $self->folder_config();
 
-	unless ( -d $ap->{master_folder} ) {
-		mkdir( $ap->{master_folder} );
+	unless ( -d $fc->{master_folder} ) {
+		mkdir( $fc->{master_folder} );
 	}
 
-	unless ( -d $ap->{master_folder} ) {
-		mkdir( $ap->{master_folder} );
+	unless ( -d $fc->{master_folder} ) {
+		mkdir( $fc->{master_folder} );
 	}
 
 	SOURCES: {
-		unless ( -d $ap->{sources_path} ) {
-			mkdir( $ap->{sources_path} );
+		unless ( -d $fc->{sources_path} ) {
+			mkdir( $fc->{sources_path} );
 			$self->make_dirs(
-				$ap->{sources_path},
+				$fc->{sources_path},
 				[
 					qw/
 					  all
@@ -202,10 +187,10 @@ sub init_automation_paths {
 		}
 	}
 	CHITUBOX: {
-		unless ( -d $ap->{chitubox_path} ) {
-			mkdir( $ap->{chitubox_path} );
+		unless ( -d $fc->{production_path} ) {
+			mkdir( $fc->{production_path} );
 			$self->make_dirs(
-				$ap->{chitubox_path},
+				$fc->{production_path},
 				[
 					qw/
 					  parts

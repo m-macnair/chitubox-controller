@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # ABSTRACT: add standard folders to a directory, create soft links for stls to original_files, and soft link everything inside into soft_links
-our $VERSION = 'v1.0.2';
+our $VERSION = 'v1.0.3';
 
-##~ DIGEST : 341bc66c5afcc0fe0f06bc8ec2d89afc
+##~ DIGEST : a23f996ddf5409c09bc20939e03d7f53
 
 use strict;
 use warnings;
@@ -18,9 +18,9 @@ sub process {
 	$path = $self->abs_path( $path );
 
 	#the strings are used next but the directories should be created after the file::find
-	my $master_folder = "$path/production_automation";
-	my $sources_path  = "$master_folder/source";
-	my $chitubox_path = "$master_folder/chitubox";
+	my $master_folder   = "$path/production_automation";
+	my $sources_path    = "$master_folder/source";
+	my $production_path = "$master_folder/chitubox";
 
 	#make softlinks in the production_automation directory for each useful file
 	my ( undef, $path_parent ) = $self->file_parse( $path );
@@ -48,7 +48,7 @@ sub process {
 			#softlink parts that probably have supports
 			if ( lc( $suffix ) eq '.chitubox' ) {
 				print "[$full_path] to chitubox$/";
-				my $new_path = $self->get_safe_path( "$chitubox_path/parts/$name$suffix" );
+				my $new_path = $self->get_safe_path( "$production_path/parts/$name$suffix" );
 				push( @links, [ "$parent_stack$partial_path", $new_path ] );
 			}
 			return 1;
@@ -60,7 +60,7 @@ sub process {
 	MAKEDIRS: {
 		mkdir( $master_folder );
 		mkdir( $sources_path );
-		mkdir( $chitubox_path );
+		mkdir( $production_path );
 		$self->make_dirs(
 			$sources_path,
 			[
@@ -74,7 +74,7 @@ sub process {
 		);
 
 		$self->make_dirs(
-			$chitubox_path,
+			$production_path,
 			[
 				qw/
 				  parts
@@ -94,8 +94,8 @@ sub process {
 	unless ( -e $project_config ) {
 		my $def = {
 			source_wanted_path   => "$sources_path/wanted",
-			chitubox_part_path   => "$chitubox_path/parts",
-			chitubox_backup_path => "$chitubox_path/backups",
+			chitubox_part_path   => "$production_path/parts",
+			chitubox_backup_path => "$production_path/backups",
 		};
 		my $string = Dumper( $def );
 		$string =~ s/^(?:.*\n)/return {\n/;
