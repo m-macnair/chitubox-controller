@@ -1,12 +1,12 @@
 #!/usr/bin/perl
 # ABSTRACT: DB Setup and import methods
-our $VERSION = 'v3.0.15';
+our $VERSION = 'v3.0.17';
 
-##~ DIGEST : 187915ad33f45763cde9282ff3754e69
+##~ DIGEST : 5995a888c32c7f19dc9a04b10145768b
 use strict;
 use warnings;
 
-package SlicerController::DB;
+package SlicerController::Role::DB;
 use v5.10;
 use Moo::Role;
 use Carp;
@@ -73,17 +73,22 @@ sub import_work_list {
 		print "processing $work_order_row_href->{path}$/";
 		my $file_id = $self->get_file_id( $work_order_row_href->{path} );
 		while ( $work_order_row_href->{count} > 0 ) {
-			$self->insert(
-				'work_order_element',
-				{
-					file_id       => $file_id,
-					work_order_id => $work_order_row->{id}
-				}
-			);
+			$self->import_file_id_to_work_order( $file_id, $work_order_row->{id} );
 			$work_order_row_href->{count}--;
 		}
-
 	}
+}
+
+sub import_file_id_to_work_order {
+	my ( $self, $file_id, $work_order_id, $p ) = @_;
+
+	$self->insert(
+		'work_order_element',
+		{
+			file_id       => $file_id,
+			work_order_id => $work_order_id
+		}
+	);
 }
 
 sub get_work_order_id {

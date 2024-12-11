@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # ABSTRACT: Multi-purpose chitubox controller and root module of the project
-our $VERSION = 'v3.0.14';
+our $VERSION = 'v3.0.16';
 
-##~ DIGEST : 9055ad8370ee2d6ff800a9fe43a2d5f2
+##~ DIGEST : 78ae8637f2554dbf59982103435efb0e
 use strict;
 use warnings;
 
@@ -52,14 +52,10 @@ around "new" => sub {
 	my $orig = shift;
 	my $self = $orig->( @_ );
 
-	my $y_offset = 0;
-
 	$self->_setup();
 
-	#assuming window is at 0,0
-	#offsets are the printing offset values to mask screen problems as defined in the printer setting
+	#There used to be a reason this was necessary but now everything is handled in _setup
 
-	$self->{machine_definitions} = Config::Any::Merge->load_files( {files => [qw{./config/machine_definitions.perl}], flatten_to_hash => 0, use_ext => 1} );
 	return $self;
 
 };
@@ -68,13 +64,15 @@ sub _setup {
 	my ( $self, $p ) = @_;
 	$p ||= {};
 
-	$self->standard_config();
+	my $config = $self->standard_config();
 
 	$self->ControlByGui_coordinate_map( $self->config_file( $p->{coordinate_map} || './config/chitubox_coordinate_map.perl' ) );
 	$self->ControlByGui_values( $self->config_file( $p->{colour_values}          || './config/colour_values.perl' ) );
 
 	my $ui_config = Config::Any::Merge->load_files( {files => [qw{./config/ui.perl}], flatten_to_hash => 0, use_ext => 1} );
 	$self->ControlByGui_zero_point( $self->ControlByGui_coordinate_map->{zero_point} );
+
+	$self->{machine_definitions} = Config::Any::Merge->load_files( {files => [qw{./config/machine_definitions.perl}], flatten_to_hash => 0, use_ext => 1} );
 
 }
 
@@ -91,23 +89,33 @@ sub default_work_order {
 #Open each asset file in the file list that has not yet had dimensions set, and record them
 #TODO limit to specific project on param
 sub get_basic_dimensions {
-	my ( $self, $res ) = @_;
-	$self->_do_db( $res );
+	my ( $self, $p ) = @_;
+	$p ||= {};
 
 	#note that .id is ambiguous here and will show up with a null value if accessed without table qualifier
 	my $sql = <<SQL;
-	select f.id
+	select distinct(f.id)
 	from file f 
 	left join file_dimensions fd 
 		on f.id = fd.file_id 
 	left join file_meta m 
 		on f.id = m.file_id
+SQL
+	my $supplement = <<SQL2;
 	where fd.file_id is null
 	and (m.is_supported = 1 or m.file_id is null )
 	and ( m.no_dimensions != 1 or m.no_dimensions is null)
-		
-SQL
-	my $sth = $self->query( $sql );
+SQL2
+
+	my $sth;
+	if ( $p->{work_order} ) {
+		$supplement .= "$/and wo.name = ? ";
+		$sql        .= "left join work_order_element woe on woe.file_id = f .id
+		left join work_order wo on woe.work_order_id = wo.id";
+		$sth = $self->query( $sql . $supplement, $p->{work_order} );
+	} else {
+		$sth = $self->query( $sql . $supplement );
+	}
 
 	while ( my $file_row = $sth->fetchrow_hashref() ) {
 		my $file_path = $self->get_file_path_from_id( $file_row->{id} );
@@ -133,6 +141,7 @@ SQL
 }
 
 #calculate and assign the band box middle positions for every object that will fit on a given plate starting from bottom left
+#TODO: remove concepts of x and y and switch to min and max dimensions
 sub populate_plate_in_db {
 	my ( $self, $machine_id, $work_order_id, $opt ) = @_;
 
@@ -171,15 +180,29 @@ sub populate_plate_in_db {
 			area desc
 		limit 1";
 	my $get_row_sth = $self->dbh->prepare( $sql_string ) or die $!;
-	warn $sql_string;
-
-	#TODO: remove concepts of x and y and switch to min and max dimensions
-	#use List::Util qw(min);
 
 	my $remaining_space_for_columns = my $machine_short_space = $this_machine->{x_dimension} - $combined_margin;
 	my $remaining_space_for_rows    = my $machine_long_space  = $this_machine->{y_dimension} - $combined_margin;
 
-	#Math::Round::nearest_ceil(.01, );
+	my $check_sth = $self->dbh->prepare( '
+		select count(f.id) as remaining
+		from file f 
+		join file_dimensions fd
+			on f.id = fd.file_id
+		join work_order_element woe 
+			on f.id = woe.file_id 
+		where 
+			woe.plate_id is null
+		limit 1;
+	' );
+	$check_sth->execute();
+	my $remaining = $check_sth->fetchrow_arrayref()->[0];
+	unless ( $remaining ) {
+		return {
+			pass      => 'Nothing Left',
+			remaining => $remaining
+		};
+	}
 
 	$self->insert( 'plate', {machine => $machine_id} );
 
@@ -334,9 +357,14 @@ sub populate_plate_in_db {
 		}
 
 	}
+	$check_sth->execute();
+	$remaining = $check_sth->fetchrow_arrayref()->[0];
 
-	#TODO status
-	return 0;
+	return {
+		pass      => 1,
+		plate_id  => $plate_id,
+		remaining => $remaining
+	};
 }
 
 sub get_plate_row {
@@ -347,8 +375,12 @@ sub get_plate_row {
 	return $plate_row;
 }
 
-#from the db positions, actually interact with chitubox to place them - assumes the correct machine definition has already been set already
-sub place_on_plate {
+#from the db positions, actually interact with chitubox to place them -
+#
+#!!assumes the machine on-screen is correct !!
+#
+
+sub place_files_for_plate {
 
 	my ( $self, $plate_id, $p ) = @_;
 	$p ||= {};
@@ -360,7 +392,9 @@ sub place_on_plate {
 		$plate_row = $self->get_plate_row( $plate_id );
 	}
 	die "Plate ID not provided" unless $plate_id;
+	use Data::Dumper;
 
+	# 	die Dumper($self->{machine_definitions});
 	my $this_machine = $self->{machine_definitions}->{$plate_row->{machine}};
 	die "Machine [$plate_row->{machine}] definition not found" unless $this_machine;
 	my $row;
@@ -387,7 +421,11 @@ sub place_on_plate {
 			on fd.file_id = f.id 
 		where 
 			woe.positioned = 1
-			and woe.on_plate is null
+			and (
+				woe.on_plate is null
+				or
+					woe.on_plate = 0
+			)
 			and plate_id = ?
 		order by 
 			woe.y_position	ASC,

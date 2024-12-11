@@ -1,1 +1,0 @@
-/mnt/iron_01/Hobby/Hobby-Huge/Assets/Xenos/Ork/Mek_Daddy_A/Torso//config.perl

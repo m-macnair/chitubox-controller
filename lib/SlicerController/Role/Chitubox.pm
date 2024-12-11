@@ -1,8 +1,8 @@
 # ABSTRACT : Module for interacting with Chitubox using ControlByGui
 package Moo::GenericRole::ControlByGui::Chitubox;
-our $VERSION = 'v0.0.12';
+our $VERSION = 'v0.0.14';
 
-##~ DIGEST : 42faacbb008a7e6de74d10b6f926d4cd
+##~ DIGEST : f6b7906976ba136074bd4a9705bb2dd5
 use strict;
 use Moo::Role;
 use 5.006;
@@ -73,50 +73,50 @@ sub import_and_position {
 	my $colour = $self->get_colour_at_coordinates( $self->ControlByGui_coordinate_map->{select_all} );
 	if ( $colour eq $self->ControlByGui_values->{colour}->{select_all_on} ) {
 		print "\tSelect all detected - disabling$/";
-		$self->click_to( 'select_all' );
+		$self->click_on( 'select_all' );
 	}
-	$self->click_to( 'scale_button' );
+	$self->click_on( 'scale_button' );
 
 	#rotate first as chitubox can change the center point
 	if ( $rotate ) {
-		$self->click_to( 'rotate_menu' );
-		$self->click_to( 'z_rot' );
+		$self->click_on( 'rotate_menu' );
+		$self->click_on( 'z_rot' );
 
 		$self->xdo_key( 'BackSpace' );
 		$self->type_enter( " $rotate" );
-		$self->click_to( 'rotate_menu' );
+		$self->click_on( 'rotate_menu' );
 	}
 
-	$self->click_to( 'move_button' );
-	$self->click_to( 'x_pos' );
+	$self->click_on( 'move_button' );
+	$self->click_on( 'x_pos' );
 	$self->xdo_key( 'BackSpace' );
 
 	#TODO: verify if the leading space is required
 	$self->type_enter( " $xy->[0]" );
-	$self->click_to( 'y_pos' );
+	$self->click_on( 'y_pos' );
 	$self->xdo_key( 'BackSpace' );
 	$self->type_enter( " $xy->[1]" );
 
 	#close the menu
-	$self->click_to( 'move_button' );
+	$self->click_on( 'move_button' );
 
 }
 
 sub position_selected {
 	my ( $self, $x, $y ) = @_;
 
-	$self->click_to( 'move_button' );
-	$self->click_to( 'x_pos' );
+	$self->click_on( 'move_button' );
+	$self->click_on( 'x_pos' );
 	$self->xdo_key( 'BackSpace' );
 
 	#TODO: verify if the leading space is required
 	$self->type_enter( " $x" );
-	$self->click_to( 'y_pos' );
+	$self->click_on( 'y_pos' );
 	$self->xdo_key( 'BackSpace' );
 	$self->type_enter( " $y" );
 
 	#close the menu
-	$self->click_to( 'move_button' );
+	$self->click_on( 'move_button' );
 
 }
 
@@ -130,9 +130,9 @@ sub get_single_file_project_dimensions {
 	}
 
 	#TODO test openfile
-	$self->click_to( 'main_settings' );
-	$self->click_to( "hamburger" );
-	$self->click_to( 'open_project' );
+	$self->click_on( 'main_settings' );
+	$self->click_on( "hamburger" );
+	$self->click_on( 'open_project' );
 	$self->type_enter( $file );
 
 	$self->adjust_sleep_for_file( $file );
@@ -140,7 +140,7 @@ sub get_single_file_project_dimensions {
 	$self->wait_for_progress_bar();
 
 	my $ref = $self->get_current_dimensions();
-	$self->click_to( 'delete' );
+	$self->click_on( 'delete' );
 	$self->clear_dynamic_sleep();
 	return $ref;
 
@@ -149,19 +149,19 @@ sub get_single_file_project_dimensions {
 sub get_current_dimensions {
 	my ( $self ) = @_;
 
-	$self->click_to( 'mirror_button' ); # clear any previous menu
-	$self->click_to( 'scale_button' );
-	$self->click_to( 'x_dim' );
+	$self->click_on( 'mirror_button' ); # clear any previous menu
+	$self->click_on( 'scale_button' );
+	$self->click_on( 'x_dim' );
 	my $x = $self->return_text();
 
-	$self->click_to( 'y_dim' );
+	$self->click_on( 'y_dim' );
 	my $y = $self->return_text();
 
-	$self->click_to( 'z_dim' );
+	$self->click_on( 'z_dim' );
 	my $z = $self->return_text();
 
 	#close the scale menu
-	$self->click_to( 'scale_button' );
+	$self->click_on( 'scale_button' );
 	return [ $x, $y, $z ];
 
 }
@@ -178,7 +178,7 @@ sub set_supports_for_directory_files {
 			return 1 unless ( first { /$suffix/ } qw/ .obj .stl / );
 			$self->import_support_export_file( $file );
 
-			$self->click_to( 'delete' );
+			$self->click_on( 'delete' );
 			sleep 1;
 			return 1;
 		},
@@ -189,10 +189,10 @@ sub set_supports_for_directory_files {
 
 sub open_file {
 	my ( $self, $file ) = @_;
-
-	$self->click_to( 'main_settings' );
-	$self->click_to( "hamburger" );
-	$self->hover_click_named( "open" );
+	Carp::confess( "File [$file] unavailable" ) unless $self->is_a_file( $file );
+	$self->click_on( 'main_settings' );
+	$self->click_on( "hamburger" );
+	$self->hover_click( "open" );
 
 	#can be improved with copy paste facilty perhaps
 	$self->type_enter( $file );
@@ -254,24 +254,25 @@ sub slice_and_save_plate {
 	}
 
 	my $extra_path             = $self->make_path( "$o_dir/$plate_name_string\_extra" );
-	my $backup_project_path    = $self->export_file_all( "$extra_path/$plate_name_string\_backup_project.chitubox" );
+	my $backup_project_path    = $self->export_file_all( $self->safe_duplicate_path( "$extra_path/$plate_name_string\_backup_project.chitubox" ) );
 	my $backup_project_file_id = $self->get_file_id( $backup_project_path );
 
 	$self->insert( 'plate_files', {file_id => $backup_project_file_id, plate_id => $plate_id, type => 'backup project'} );
 
 	$self->wait_for_progress_bar();
-	$self->hover_click_named( 'slice_button' );
+	$self->hover_click( 'slice_button' );
 
 	print "$/Checking for over limit warning$/";
 	if ( $self->if_colour_name_at_named( 'over_plate_yes_button', 'slice_platform_yes' ) ) {
-		$self->hover_click_named( 'slice_platform_yes' );
+		$self->hover_click( 'slice_platform_yes' );
 		print "$/\t GOING OVER LIMIT$/";
 		$self->dynamic_sleep();
 	}
 
 	#waiting for slice preview to finish
 	$self->wait_for_progress_bar();
-	$self->hover_click_named( 'slice_save', {offset => $this_machine->{save_offset} || []} );
+	warn "save offset: $this_machine->{save_offset}";
+	$self->hover_click( 'slice_save', {offset => $this_machine->{save_offset} || []} );
 	$self->dynamic_sleep();
 
 	my $o_path = "$o_dir/$plate_name_string.ctb";
@@ -293,6 +294,7 @@ sub slice_and_save_plate {
 
 	print "$/\tsaving to $o_path$/";
 	$self->type_enter( $o_path );
+	sleep( 3 ); #because it can still fail
 	$self->dynamic_wait_for_progress_bar();
 	unless ( -f $o_path ) {
 		$self->play_sound();
@@ -310,6 +312,7 @@ sub clear_plate {
 	}
 	$self->click_on( 'delete_object' );
 	$self->wait_for_progress_bar();
+	$self->set_select_all_off();
 }
 
 sub export_file_all {
@@ -329,15 +332,15 @@ sub export_file_single {
 sub _export_file {
 	my ( $self, $out_path, $p ) = @_;
 
-	$self->click_to( 'main_settings' );
-	$self->click_to( "hamburger" );
+	$self->click_on( 'main_settings' );
+	$self->click_on( "hamburger" );
 	$self->move_to_named( 'save_project' ); # this is a hover menu so we need to give it time to appear
 	sleep( 1 );
-	$self->click_to( $p->{export_button_name} );
+	$self->click_on( $p->{export_button_name} );
 
 	$self->type_enter( $out_path );
 	$self->wait_for_progress_bar();
-	$self->click_to( 'hamburger' );
+	$self->click_on( 'hamburger' );
 	return $out_path;
 
 }
@@ -346,10 +349,8 @@ sub center_export_first_file {
 	my ( $self, $out_path, $p ) = @_;
 
 	#switch off export multi
-	if ( $self->if_colour_name_at_named( 'select_all_on', 'select_all' ) ) {
-		$self->click_to( 'select_all' );
-	}
-	$self->click_to( 'first_object' );
+	$self->set_select_all_off();
+	$self->click_on( 'first_object' );
 	$self->position_selected( 0, 0 );
 	my $path = $self->export_file_single( $out_path, $p );
 	$self->wait_for_progress_bar();
@@ -367,11 +368,11 @@ sub import_support_export_file {
 	}
 	$self->auto_supports();
 
-	$self->click_to( 'main_settings' );
-	$self->click_to( "hamburger" );
+	$self->click_on( 'main_settings' );
+	$self->click_on( "hamburger" );
 	$self->move_to_named( 'save_project' ); # this is a hover menu so we need to give it time to appear
 	sleep( 1 );
-	$self->click_to( 'save_project_all_models' );
+	$self->click_on( 'save_project_all_models' );
 	my $out_path = $opt->{out_path};
 
 	unless ( $out_path ) {
@@ -385,7 +386,7 @@ sub import_support_export_file {
 
 sub rotate_file_x {
 	my ( $self ) = @_;
-	for my $click_to (
+	for my $click_on (
 		qw/
 		rotate_menu
 		rotate_x45+
@@ -393,13 +394,13 @@ sub rotate_file_x {
 		/
 	  )
 	{
-		$self->click_to( $click_to );
+		$self->click_on( $click_on );
 	}
 }
 
 sub rotate_file_y {
 	my ( $self ) = @_;
-	for my $click_to (
+	for my $click_on (
 		qw/
 		rotate_menu
 		rotate_y45+
@@ -407,13 +408,13 @@ sub rotate_file_y {
 		/
 	  )
 	{
-		$self->click_to( $click_to );
+		$self->click_on( $click_on );
 	}
 }
 
 sub rotate_file_corner {
 	my ( $self ) = @_;
-	for my $click_to (
+	for my $click_on (
 		qw/
 		rotate_menu
 		rotate_x45-
@@ -422,16 +423,16 @@ sub rotate_file_corner {
 		/
 	  )
 	{
-		$self->click_to( $click_to );
+		$self->click_on( $click_on );
 	}
 
 }
 
 sub auto_supports {
 	my ( $self ) = @_;
-	$self->click_to( 'support_menu' );
+	$self->click_on( 'support_menu' );
 	$self->wait_for_progress_bar();
-	for my $click_to (
+	for my $click_on (
 		qw/
 		add_supports_mode
 		light_supports
@@ -439,7 +440,7 @@ sub auto_supports {
 		/
 	  )
 	{
-		$self->click_to( $click_to );
+		$self->click_on( $click_on );
 		sleep( 3 );
 		$self->wait_for_progress_bar();
 	}
@@ -477,14 +478,14 @@ sub wait_for_pixel_colour {
 sub set_select_all_on {
 	my ( $self ) = @_;
 	unless ( $self->if_colour_name_at_named( 'select_all_on', 'select_all' ) ) {
-		$self->click_to( 'select_all' );
+		$self->click_on( 'select_all' );
 	}
 }
 
 sub set_select_all_off {
 	my ( $self ) = @_;
 	if ( $self->if_colour_name_at_named( 'select_all_on', 'select_all' ) ) {
-		$self->click_to( 'select_all' );
+		$self->click_on( 'select_all' );
 	}
 
 }
@@ -530,7 +531,7 @@ sub clear_for_project {
 	$self->clear_dynamic_sleep();
 
 	#this may fix a crash caused by the highlight not having time to show
-	$self->hover_click_named( 'new_project' );
+	$self->hover_click( 'new_project' );
 	$self->dynamic_sleep();
 
 }
@@ -541,6 +542,7 @@ sub clear_for_project {
 
 sub export_plate_as_single_file_projects {
 	my ( $self, $out_dir, $p ) = @_;
+	die 'THIS IS OBSOLETE BUT MAY BE USEFUL REWRITTEN';
 	unless ( $out_dir ) {
 		print "Output directory defaulting to ./";
 		$out_dir = './';
