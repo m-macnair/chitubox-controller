@@ -1,8 +1,8 @@
 # ABSTRACT : Module for interacting with Chitubox using ControlByGui
-package Moo::GenericRole::ControlByGui::Chitubox;
-our $VERSION = 'v0.0.14';
+package SlicerController::Role::Chitubox;
+our $VERSION = 'v0.0.15';
 
-##~ DIGEST : f6b7906976ba136074bd4a9705bb2dd5
+##~ DIGEST : 63eb88b372f4ffd538bf9d7714a8e1da
 use strict;
 use Moo::Role;
 use 5.006;
@@ -354,6 +354,11 @@ sub center_export_first_file {
 	$self->position_selected( 0, 0 );
 	my $path = $self->export_file_single( $out_path, $p );
 	$self->wait_for_progress_bar();
+	unless ( $self->is_a_file( $path ) ) {
+
+		$self->play_sound();
+		Carp::confess( "Path [$path] does not exist after export - probably a silent failure" );
+	}
 	return $path;
 
 }

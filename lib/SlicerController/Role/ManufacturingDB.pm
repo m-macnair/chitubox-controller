@@ -1,12 +1,12 @@
 #!/usr/bin/perl
 # ABSTRACT: DB Setup and import methods
-our $VERSION = 'v3.0.17';
+our $VERSION = 'v3.0.18';
 
-##~ DIGEST : 5995a888c32c7f19dc9a04b10145768b
+##~ DIGEST : 7f5d686eb8d1db2ded4f582500d5e913
 use strict;
 use warnings;
 
-package SlicerController::Role::DB;
+package SlicerController::Role::ManufacturingDB;
 use v5.10;
 use Moo::Role;
 use Carp;
@@ -15,11 +15,15 @@ use Data::Dumper;
 with qw/
   Moo::Task::FileDB::Role::Core
   Moo::Task::FileDB::Role::Linux
-  Moo::GenericRole::DB::Working::AbstractSQLite
-  Moo::Task::FileDB::Role::DB::AbstractSQLite
 
+  Moo::Task::FileDB::Role::DB::AbstractSQLite
   Moo::GenericRole::FileIO::CSV
   Moo::GenericRole::ConfigAny
+
+  Moo::GenericRole::DB
+  Moo::GenericRole::DB::Abstract
+  Moo::GenericRole::DB::SQLite
+
   /; # AbstractSQLite is a wrapper class for all dbi actions
 
 sub _do_db {

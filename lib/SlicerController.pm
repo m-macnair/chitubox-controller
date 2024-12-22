@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # ABSTRACT: Multi-purpose chitubox controller and root module of the project
-our $VERSION = 'v3.0.17';
+our $VERSION = 'v3.0.18';
 
-##~ DIGEST : 250a5bba3e5db0cbcaee422943bd1dd0
+##~ DIGEST : 6ef30220b9231a1ee097ecafecfc4a29
 use strict;
 use warnings;
 
@@ -30,11 +30,11 @@ use Carp;
 use parent 'Moo::GenericRoleClass::CLI'; #provides  CLI, FileSystem, Common
 with qw/
 
-  Moo::GenericRole::ControlByGui::Chitubox
   Moo::GenericRole::FileIO::CSV
   Moo::GenericRole::ConfigAny
-  Moo::GenericRole::DB::Working::AbstractSQLite
-  SlicerController::Role::GeneralDB
+
+  SlicerController::Role::ManufacturingDB
+  SlicerController::Role::Chitubox
   Moo::Task::ControlByGui::Role::Core
   Moo::Task::ControlByGui::Role::Linux
   /;                                     # AbstractSQLite is a wrapper class for all dbi actions
@@ -65,7 +65,7 @@ sub _setup {
 	$p ||= {};
 
 	my $config = $self->standard_config();
-
+	$self->_do_db();
 	$self->ControlByGui_coordinate_map( $self->config_file( $p->{coordinate_map} || './config/chitubox_coordinate_map.perl' ) );
 	$self->ControlByGui_values( $self->config_file( $p->{colour_values}          || './config/colour_values.perl' ) );
 

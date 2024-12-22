@@ -3,9 +3,9 @@
 use strict;
 use warnings;
 use Data::Dumper;
-our $VERSION = 'v0.0.7';
+our $VERSION = 'v0.0.8';
 
-##~ DIGEST : e28fe9e048f6d936ff90e396245d5834
+##~ DIGEST : 291380782444ea36e1c9eb3b08c6fb48
 
 use strict;
 use warnings;
@@ -18,7 +18,7 @@ use parent qw/
   /;
 
 with qw/
-  SlicerController::ScriptHelper
+  SlicerController::Role::FolderScript
   Moo::GenericRole::ConfigAny
   /;
 
@@ -26,7 +26,7 @@ use Data::Dumper;
 
 sub process {
 	my ( $self ) = @_;
-	my $project_config = $self->project_config();
+	my $folder_config = $self->folder_config();
 
 	my $file_id_stack = $self->get_more_files();
 	unless ( @$file_id_stack ) {
@@ -41,10 +41,10 @@ sub process {
 		my $file_id_stack = $self->get_more_files();
 		return unless $file_id_stack;
 		for my $file_id ( @{$file_id_stack} ) {
-			my ( $file, $suffix ) = $self->directory_db()->get_numbered_name( $file_id );
+			my ( $file, $suffix ) = $self->fdb()->get_numbered_name( $file_id );
 
 			# 		die $file;
-			$self->open_file( "$project_config->{source_wanted_path}/$file$suffix" );
+			$self->open_file( "$folder_config->{source_wanted_path}/$file$suffix" );
 		}
 		$self->play_sound();
 
@@ -67,27 +67,27 @@ sub process {
 			}
 
 			BACKUP: {
-				if ( -d $project_config->{chitubox_backup_path} ) {
+				if ( -d $folder_config->{production_backup_path} ) {
 
 					#Do a backup unless there's only one file in play
-					$self->export_file_all( "$project_config->{chitubox_backup_path}/" . time . '.chitubox' ) unless scalar( @$file_id_stack ) == 1;
+					$self->export_file_all( "$folder_config->{production_backup_path}/" . time . '.chitubox' ) unless scalar( @$file_id_stack ) == 1;
 				} else {
-					print "!!!!Cannot create backup, folder [$project_config->{chitubox_backup_path}] is missing$/";
+					print "!!!!Cannot create backup, folder [$folder_config->{production_backup_path}] is missing$/";
 				}
 			}
 
 			for my $file_id ( @$file_id_stack ) {
-				my $nname = $self->directory_db()->get_numbered_name( $file_id );
+				my $nname = $self->fdb()->get_numbered_name( $file_id );
 
-				my $new_path = "$project_config->{chitubox_part_path}/$nname.chitubox";
+				my $new_path = "$folder_config->{production_part_path}/$nname.chitubox";
 				print "Exporting [$file_id] to [$new_path]";
 				$self->center_export_first_file( $new_path );
 
 				my $dim = $self->get_current_dimensions( $new_path );
 
 				#this is a _different database_ using different IDs
-				my $main_db_file_id      = $self->get_file_id( $new_path );
-				my $directory_db_file_id = $self->directory_db()->get_file_id( $new_path );
+				my $main_db_file_id = $self->get_file_id( $new_path );
+				my $fdb_file_id     = $self->fdb()->get_file_id( $new_path );
 
 				$self->insert(
 					'file_dimensions',
@@ -99,11 +99,11 @@ sub process {
 					}
 				);
 
-				$self->directory_db()->insert(
+				$self->fdb()->insert(
 					'source_to_part',
 					{
 						source_id => $file_id,
-						part_id   => $directory_db_file_id,
+						part_id   => $fdb_file_id,
 					}
 				);
 
@@ -119,10 +119,10 @@ sub get_more_files {
 
 	#5 seems to be a good limit due to non-size based delays
 	my $limit          = 10;
-	my $size_limit     = 1024 * 1024 * 100;
+	my $size_limit     = 1024 * 1024 * 150;
 	my $combined_sizes = 0;
 	my @return;
-	my $sth = $self->directory_db()->query( "
+	my $sth = $self->fdb()->query( "
 		select f.id from file f
 		join original_file of 
 			on f.id = of.file_id
@@ -137,7 +137,7 @@ sub get_more_files {
 	", $limit );
 
 	while ( my $row = $sth->fetchrow_hashref() ) {
-		my $path = $self->directory_db()->get_file_path_from_id( $row->{id} );
+		my $path = $self->fdb()->get_file_path_from_id( $row->{id} );
 		print "analysing [$path]$/";
 		my @stat = stat $path;
 		$combined_sizes += $stat[7];
@@ -168,12 +168,8 @@ sub main {
 	my ( $config_path ) = @_;
 
 	my $self = Obj->new();
+	$self->_setup();
 	$self->script_setup();
-
-	$self->set_relative_path( __FILE__ );
-	my $project_config = $self->set_asset_project_config( $config_path );
-	my $ap             = $self->load_automation_paths();
-	my $ddb            = $self->directory_db();
 
 	$self->process();
 
