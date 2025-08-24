@@ -1,0 +1,7 @@
+tmp_test/
+db/
+sliced/
+*.csv
+*.sqlite
+*~
+

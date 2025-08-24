@@ -1,12 +1,12 @@
 #!/usr/bin/perl
 # ABSTRACT: DB Setup and import methods
-our $VERSION = 'v3.0.14';
+our $VERSION = 'v3.0.18';
 
-##~ DIGEST : dd2d56e2ae1497bfad07ab888f94d806
+##~ DIGEST : 7f5d686eb8d1db2ded4f582500d5e913
 use strict;
 use warnings;
 
-package SlicerController::DB;
+package SlicerController::Role::ManufacturingDB;
 use v5.10;
 use Moo::Role;
 use Carp;
@@ -15,12 +15,15 @@ use Data::Dumper;
 with qw/
   Moo::Task::FileDB::Role::Core
   Moo::Task::FileDB::Role::Linux
-  Moo::GenericRole::DB::Working::AbstractSQLite
-  Moo::Task::FileDB::Role::DB::SQLite::Setup
-  Moo::Task::FileDB::Role::DB::AbstractSQLite
 
+  Moo::Task::FileDB::Role::DB::AbstractSQLite
   Moo::GenericRole::FileIO::CSV
   Moo::GenericRole::ConfigAny
+
+  Moo::GenericRole::DB
+  Moo::GenericRole::DB::Abstract
+  Moo::GenericRole::DB::SQLite
+
   /; # AbstractSQLite is a wrapper class for all dbi actions
 
 sub _do_db {
@@ -74,23 +77,28 @@ sub import_work_list {
 		print "processing $work_order_row_href->{path}$/";
 		my $file_id = $self->get_file_id( $work_order_row_href->{path} );
 		while ( $work_order_row_href->{count} > 0 ) {
-			$self->insert(
-				'work_order_element',
-				{
-					file_id       => $file_id,
-					work_order_id => $work_order_row->{id}
-				}
-			);
+			$self->import_file_id_to_work_order( $file_id, $work_order_row->{id} );
 			$work_order_row_href->{count}--;
 		}
-
 	}
+}
+
+sub import_file_id_to_work_order {
+	my ( $self, $file_id, $work_order_id, $p ) = @_;
+
+	$self->insert(
+		'work_order_element',
+		{
+			file_id       => $file_id,
+			work_order_id => $work_order_id
+		}
+	);
 }
 
 sub get_work_order_id {
 	my ( $self, $string ) = @_;
 	die "yes";
-	Carp::Confess( 'String not provided' ) unless $string;
+	Carp::confess( 'String not provided' ) unless $string;
 	my $row = $self->select( 'work_orders', {name => $string} )->fetchrow_hashref();
 	Carp::Confess( 'Work Order row not found' ) unless $row;
 	return $row->{id};
