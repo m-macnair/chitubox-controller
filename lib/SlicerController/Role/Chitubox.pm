@@ -1,8 +1,8 @@
 # ABSTRACT : Module for interacting with Chitubox using ControlByGui
 package SlicerController::Role::Chitubox;
-our $VERSION = 'v0.0.15';
+our $VERSION = 'v0.0.18';
 
-##~ DIGEST : 63eb88b372f4ffd538bf9d7714a8e1da
+##~ DIGEST : da7e70fae5e8a8379bac6875db3bdfd8
 use strict;
 use Moo::Role;
 use 5.006;
@@ -10,6 +10,7 @@ use warnings;
 use Data::Dumper;
 use Carp;
 use List::Util 'first';
+use Clipboard;
 
 =head1 VERSION & HISTORY
 	<breaking revision>.<feature>.<patch>
@@ -82,21 +83,44 @@ sub import_and_position {
 		$self->click_on( 'rotate_menu' );
 		$self->click_on( 'z_rot' );
 
+		# 		sleep(1);
 		$self->xdo_key( 'BackSpace' );
-		$self->type_enter( " $rotate" );
+
+		# 		sleep(1);
+		$self->type_enter( qq{" $rotate"} );
+
+		# 		sleep(1);
 		$self->click_on( 'rotate_menu' );
+
+		# 		sleep(1);
 	}
 
 	$self->click_on( 'move_button' );
+
+	# 	sleep(1);
 	$self->click_on( 'x_pos' );
+
+	# 	sleep(1);
 	$self->xdo_key( 'BackSpace' );
 
+	# 	sleep(1);
 	#TODO: verify if the leading space is required
-	$self->type_enter( " $xy->[0]" );
-	$self->click_on( 'y_pos' );
-	$self->xdo_key( 'BackSpace' );
-	$self->type_enter( " $xy->[1]" );
+	$self->type_enter( qq{" $xy->[0]"} );
 
+	# 	sleep(1);
+	# 	warn "pre y click";
+	# 	sleep(2);
+	$self->click_on( 'y_pos' );
+
+	# 	sleep(1);
+	$self->xdo_key( 'BackSpace' );
+
+	# 	sleep(1);
+	# 	warn "here  [$xy->[1]] ";
+	# 	sleep(1);
+	$self->type_enter( qq{" $xy->[1]"} );
+
+	# 	sleep(1);
 	#close the menu
 	$self->click_on( 'move_button' );
 
@@ -133,7 +157,7 @@ sub get_single_file_project_dimensions {
 	$self->click_on( 'main_settings' );
 	$self->click_on( "hamburger" );
 	$self->click_on( 'open_project' );
-	$self->type_enter( $file );
+	$self->paste_string( $file );
 
 	$self->adjust_sleep_for_file( $file );
 	$self->dynamic_sleep();
@@ -193,9 +217,29 @@ sub open_file {
 	$self->click_on( 'main_settings' );
 	$self->click_on( "hamburger" );
 	$self->hover_click( "open" );
+	$self->adjust_sleep_for_file( $file );
 
 	#can be improved with copy paste facilty perhaps
-	$self->type_enter( $file );
+	$self->paste_string( $file );
+	$self->dynamic_sleep();
+	$self->wait_for_progress_bar();
+}
+
+sub open_multiple_files {
+	my ( $self, $stack ) = @_;
+
+	for my $file ( @$stack ) {
+		Carp::confess( "File path [$file] unavailable" ) unless $self->is_a_file( $file );
+		$self->adjust_sleep_for_file( $file );
+	}
+	$self->click_on( 'main_settings' );
+	$self->click_on( "hamburger" );
+	$self->hover_click( "open" );
+
+	my @string_stack = map { qq{\"$_\"} } @$stack;
+	use Data::Dumper;
+	my $string = join( ',', @string_stack );
+	$self->paste_string( $string );
 	$self->dynamic_sleep();
 	$self->wait_for_progress_bar();
 }
@@ -221,7 +265,52 @@ sub machine_select {
 
 }
 
-sub slice_and_save_plate {
+#content & DB agnostic slice & save
+sub slice_and_save_plate_to {
+	my ( $self, $dir, $name_string, $machine_id ) = @_;
+	my $this_machine = $self->{machine_definitions}->{$machine_id};
+	die "Machine [$machine_id] not found" unless $this_machine;
+
+	$self->click_on( 'viewing_angle' );
+	$self->hover_click( 'slice_button' );
+	my $o_path = $self->make_path( "$dir/$name_string/" );
+
+	$self->Log( "Checking for over limit warning" );
+	if ( $self->if_colour_name_at_named( 'over_plate_yes_button', 'slice_platform_yes' ) ) {
+		$self->hover_click( 'slice_platform_yes' );
+		$self->Log( "GOING OVER LIMIT", {level => 'ALERT'} );
+		$self->dynamic_sleep();
+	}
+
+	#waiting for slice preview to finish
+	$self->wait_for_progress_bar();
+	$self->Log( "save offset: $this_machine->{save_offset}", {level => 'ALERT'} );
+	$self->hover_click( 'slice_save', {offset => $this_machine->{save_offset} || []} );
+	$self->dynamic_sleep();
+
+	my $measure_path = "$o_path/measurements.png";
+	my $preview_path = "$o_path/preview.png";
+	my $sliced_path  = "$o_path/$name_string.ctb";
+	unlink( $measure_path ) if -e $measure_path;
+	unlink( $preview_path ) if -e $measure_path;
+
+	#TODO add margins as this does not work right now
+	# 	print `import -window root -quality 95 -compress none -negate -crop 330x225+1650+235 $measure_path`;
+	# 	print `import -window root -quality 50 -crop 1000x1000+100+100 $preview_path`;
+
+	$self->Log( "saving to $sliced_path" );
+	$self->paste_string( $sliced_path );
+	sleep( 3 ); #because it can still fail
+	$self->dynamic_wait_for_progress_bar();
+	unless ( -f $sliced_path ) {
+		$self->play_sound();
+		die "Unknown failure - output file not created";
+	}
+	$self->click_on( 'slice_back' );
+	return $sliced_path;
+}
+
+sub slice_and_save_plate_old {
 	my ( $self, $plate_id, $p ) = @_;
 	$p ||= {};
 	$self->click_on( 'viewing_angle' );
@@ -293,7 +382,7 @@ sub slice_and_save_plate {
 	$o_path = $self->safe_duplicate_path( $o_path );
 
 	print "$/\tsaving to $o_path$/";
-	$self->type_enter( $o_path );
+	$self->paste_string( $o_path );
 	sleep( 3 ); #because it can still fail
 	$self->dynamic_wait_for_progress_bar();
 	unless ( -f $o_path ) {
@@ -324,7 +413,11 @@ sub export_file_all {
 
 sub export_file_single {
 	my ( $self, $out_path ) = @_;
-
+	if ( -e $out_path ) {
+		my $msg = "File [$out_path] already exists!";
+		$self->Log( $msg );
+		die $msg;
+	}
 	return $self->_export_file( $out_path, {export_button_name => 'save_project_single'} );
 
 }
@@ -338,7 +431,7 @@ sub _export_file {
 	sleep( 1 );
 	$self->click_on( $p->{export_button_name} );
 
-	$self->type_enter( $out_path );
+	$self->paste_string( $out_path );
 	$self->wait_for_progress_bar();
 	$self->click_on( 'hamburger' );
 	return $out_path;
@@ -464,25 +557,10 @@ sub dynamic_wait_for_progress_bar {
 	$self->wait_for_progress_bar();
 }
 
-sub wait_for_pixel_colour {
-	my ( $self, $x, $y, $wanted ) = @_;
-	Carp::confess( 'Wanted not supplied' ) unless $wanted;
-	sleep( 1 ); # Mandatory - anything that might want this, might load too fast
-	my $colour = $self->get_colour_at_coordinates( [ $x, $y ] );
-
-	if ( $colour eq $wanted ) {
-		print "Progress bar is clear$/";
-	} else {
-		print "Waiting on progress bar [$colour] != [$wanted]$/";
-		sleep( 1 );
-		$self->wait_for_pixel_colour( $x, $y, $wanted );
-	}
-	return;
-}
-
 sub set_select_all_on {
 	my ( $self ) = @_;
 	unless ( $self->if_colour_name_at_named( 'select_all_on', 'select_all' ) ) {
+		$self->Log( "Enabling select_all" );
 		$self->click_on( 'select_all' );
 	}
 }
@@ -490,9 +568,10 @@ sub set_select_all_on {
 sub set_select_all_off {
 	my ( $self ) = @_;
 	if ( $self->if_colour_name_at_named( 'select_all_on', 'select_all' ) ) {
+		$self->Log( "Disabling select_all" );
 		$self->click_on( 'select_all' );
+		sleep( 1 );
 	}
-
 }
 
 sub get_chitubox_pid {
@@ -500,9 +579,9 @@ sub get_chitubox_pid {
 	if ( $self->chitubox_pid() ) {
 		return $self->chitubox_pid();
 	} else {
-		my @output = `ps -ef | grep \./Chitubox`;
+		my @output = `ps -ef | grep -i \./Chitubox`;
 		for my $line ( @output ) {
-			if ( $line =~ "./Chitubox$/" && index( $line, 'grep' ) == -1 ) {
+			if ( $self->match_ps_for_chitubox( $line ) ) {
 				my @fields = split( /\s+/, $line );
 				$self->chitubox_pid( $fields[1] );
 				return $self->chitubox_pid();
@@ -518,13 +597,25 @@ sub determine_chitubox_status {
 	my $chitubox_pid = $self->get_chitubox_pid();
 	my @output       = `ps -fp $chitubox_pid`;
 	for my $line ( @output ) {
-		if ( $line =~ "./Chitubox$/" ) {
+		if ( $self->match_ps_for_chitubox( $line ) ) {
 			return 1;
 		}
 	}
 	$self->play_sound();
 	Carp::confess( "Chitubox PID [$chitubox_pid] did not return a valid process ID from ps -fp - Chitubox probably crashed" );
 	return 0;
+}
+
+#This will be a problem one day - the order matters and the folder structure would be an issue
+sub match_ps_for_chitubox {
+	my ( $self, $line ) = @_;
+	if (   ( $line =~ 'konsole --hold -e ./CHITUBOX' && index( $line, 'grep' ) == -1 )
+		or ( $line =~ "./CHITUBOX$/" && index( $line, 'grep' ) == -1 )
+		or ( $line =~ "./Chitubox$/" && index( $line, 'grep' ) == -1 ) )
+	{
+		return 1;
+	}
+	return;
 }
 
 sub clear_for_project {
@@ -591,7 +682,7 @@ sub export_plate_as_single_file_projects {
 		$self->move_to_named( 'save_project' ); # this is a hover menu so we need to give it time to appear
 		$self->dynamic_sleep();
 		$self->click_on( 'save_project_single' );
-		$self->type_enter( $out_path );
+		$self->paste_string( $out_path );
 
 		#Today the lesson is - 1. wait for progress always and 2. lock the screen (smartly) when an action is actioning in  a gui application
 		$self->wait_for_progress_bar();
@@ -612,6 +703,7 @@ sub export_plate_as_single_file_projects {
 		$self->click_on( 'first_object' );
 
 		$self->click_on( 'delete_object' );
+		$self->adjust_sleep_for_removed_file( $out_path );
 
 		#check if more objects remain
 		$self->click_on( 'first_object' );

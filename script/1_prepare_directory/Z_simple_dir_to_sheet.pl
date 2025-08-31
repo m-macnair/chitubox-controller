@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # ABSTRACT: dump typically desirable directory contents into a given spreadsheet
-our $VERSION = 'v0.0.5';
+our $VERSION = 'v0.0.6';
 
-##~ DIGEST : cb67939293c7b5f9872d7216c25e255a
+##~ DIGEST : f1e6e88dc1ba1b6511365c9cd4f04b8d
 
 use strict;
 use warnings;
@@ -23,11 +23,11 @@ sub process {
 		sub {
 			my ( $full_path ) = @_;
 			my ( $name, $dir, $suffix ) = $self->file_parse( $full_path );
-			return 1 unless ( any { $_ eq $suffix } qw/ .stl .obj / );
-
+			return 1 unless ( any { lc( $_ ) eq $suffix } qw/ .stl .obj .chitubox/ );
+			print qq{added  "$name$suffix"$/};
 			$self->href_to_csv(
 				{
-					'#count' => 0,
+					'#count' => 1,
 					dir      => $dir,
 					file     => "$name$suffix",
 				},

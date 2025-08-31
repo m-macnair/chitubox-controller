@@ -4,10 +4,10 @@ use strict;
 use warnings;
 
 # ABSTRACT: run SlicerController::import_work_list()
-our $VERSION = 'v1.0.6';
+our $VERSION = 'v1.0.8';
 
 package Obj;
-##~ DIGEST : 5d261378e0adfbc951ad36f523ba5da2
+##~ DIGEST : 375266234aed2600010caf0875356b2a
 use Moo;
 use parent qw/
 
@@ -15,26 +15,39 @@ use parent qw/
   /;
 
 with qw/
-  SlicerController::ScriptHelper
+  SlicerController::Role::FolderScript
 
   /;
 
 1;
 
-package main;
-main( @ARGV );
-
-sub main {
-
-	my $self = Obj->new();
-	$self->script_setup();
-	my ( $work_order ) = @_;
+sub process {
+	my ( $self, $work_order ) = @_;
 
 	$self->get_basic_dimensions(
 		{
 			work_order => $work_order
 		}
 	);
-	$self->play_end_sound();
 }
+
+package main;
+main( @ARGV );
+use List::Util qw(any);
+use Data::Dumper;
+
+sub main {
+	my ( $work_order ) = @_;
+
+	my $self = Obj->new();
+	$self->_setup();
+	$self->script_setup();
+
+	$self->process( $work_order );
+
+	$self->play_end_sound();
+	print "It is done. Move on.$/";
+
+}
+
 1;
