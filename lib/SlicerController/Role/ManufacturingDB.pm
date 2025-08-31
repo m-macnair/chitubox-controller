@@ -1,8 +1,8 @@
 #!/usr/bin/perl
-# ABSTRACT: DB Setup and import methods
-our $VERSION = 'v3.0.18';
+# ABSTRACT: Methods for exclusively manipulating the DB
+our $VERSION = 'v3.0.20';
 
-##~ DIGEST : 7f5d686eb8d1db2ded4f582500d5e913
+##~ DIGEST : faae87e8a2994a7bb029d92c1c558cf4
 use strict;
 use warnings;
 
@@ -59,38 +59,15 @@ sub _do_db {
 	}
 }
 
-sub import_work_list {
-	my ( $self, $p ) = @_;
-	$self->_do_db( $p );
-	my $stack = $self->get_file_list( $p->{csv_file} );
-	my $work_order_name;
-	if ( $p->{work_order_name} ) {
-		$work_order_name = $p->{work_order_name};
-	} else {
-		$work_order_name = "default";
-		warn( "no work_order id provided for import_work_list; set to [$work_order_name]" );
-	}
-
-	my $work_order_row = $self->select_insert_href( 'work_order', {name => $work_order_name}, [qw/* id/] );
-
-	for my $work_order_row_href ( @{$stack} ) {
-		print "processing $work_order_row_href->{path}$/";
-		my $file_id = $self->get_file_id( $work_order_row_href->{path} );
-		while ( $work_order_row_href->{count} > 0 ) {
-			$self->import_file_id_to_work_order( $file_id, $work_order_row->{id} );
-			$work_order_row_href->{count}--;
-		}
-	}
-}
-
 sub import_file_id_to_work_order {
 	my ( $self, $file_id, $work_order_id, $p ) = @_;
-
+	$p ||= {};
 	$self->insert(
 		'work_order_element',
 		{
 			file_id       => $file_id,
-			work_order_id => $work_order_id
+			work_order_id => $work_order_id,
+			sequence_id   => $p->{sequence_id}
 		}
 	);
 }
@@ -147,6 +124,60 @@ sub get_file_list {
 	);
 	return \@stack;
 
+}
+
+sub get_outstanding_files_for_work_order {
+	my ( $self, $work_order_id, $margin, $max_area ) = @_;
+	$margin ||= 2;
+	my $sql_string = "
+		SELECT 
+			woe.id as woe_id,
+			f.id as file_id,
+			round(fd.x_dimension + $margin,2) as  x_dimension,
+			round(fd.y_dimension + $margin,2) as  y_dimension,
+			round(max(fd.x_dimension + $margin , fd.y_dimension + $margin),2) as longest_edge,
+			round(min(fd.x_dimension + $margin , fd.y_dimension + $margin),2) as shortest_edge,
+			fd.x_dimension + fd.y_dimension as area
+		FROM file f 
+		JOIN file_dimensions fd
+			on f.id = fd.file_id
+		JOIN work_order_element woe 
+			on f.id = woe.file_id 
+		WHERE
+			woe.plate_id IS NULL
+			/*SQLite + DBI oddity*/
+			AND woe.work_order_id = ?
+			AND fd.x_dimension > 0
+			AND fd.y_dimension > 0
+	";
+
+	$sql_string .= " AND area < $max_area $/" if $max_area;
+	$sql_string .= "ORDER BY area desc";
+	my $get_files_sth = $self->dbh->prepare( $sql_string ) or die $!;
+	$get_files_sth->execute( $work_order_id );
+	my @return;
+	while ( my $row = $get_files_sth->fetchrow_hashref() ) {
+		push( @return, $row );
+	}
+	return \@return;
+}
+
+sub get_count_of_remaining_work_order_files {
+	my ( $self, $work_order_id, $margin ) = @_;
+	my $check_sth = $self->dbh->prepare( '
+		select count(f.id) as remaining
+		from file f 
+		join file_dimensions fd
+			on f.id = fd.file_id
+		join work_order_element woe 
+			on f.id = woe.file_id 
+		where 
+			woe.plate_id is null
+			and woe.work_order_id = ?
+		limit 1;
+	' );
+	$check_sth->execute( $work_order_id );
+	return $check_sth->fetchrow_arrayref()->[0];
 }
 
 1;

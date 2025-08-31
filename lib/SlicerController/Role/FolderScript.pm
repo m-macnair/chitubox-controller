@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # ABSTRACT: wrapper role for common script operations
-our $VERSION = 'v3.0.19';
+our $VERSION = 'v3.0.22';
 
-##~ DIGEST : 102a676cc6af11d5883edc6e3c37c85b
+##~ DIGEST : 4b707bb597c51d3afb325c0ede23d875
 use strict;
 use warnings;
 
@@ -10,6 +10,9 @@ package SlicerController::Role::FolderScript;
 
 use v5.10;
 use Moo::Role;
+with qw/
+  Moo::GenericRole::LogAnyAdapter
+  /;
 
 use Carp qw/confess/;
 use SlicerController::Class::FolderAutomationDB;
@@ -37,7 +40,8 @@ ACCESSORS: {
 
 sub setup_suite_root {
 	my ( $self, $value ) = @_;
-	$self->{suite_root} = $self->abs_path( $value || "$ENV{HOME}/chitubox-controller/" );
+
+	$self->{suite_root} = $self->abs_path( $value || "$ENV{HOME}/git/chitubox-controller/" );
 	mkdir( $self->{suite_root} ) unless -d $self->{suite_root};
 	return $self->{suite_root};
 }
@@ -46,24 +50,34 @@ sub load_folder_config {
 	my ( $self, $config_path ) = @_;
 	$self->folder_config( $self->get_asset_folder_config( $config_path ) );
 
+	#... how did this work before
+	$self->config( {%{$self->config()}, %{$self->folder_config()}} );
+	$self->Log( $self->config(), {file_only => 1} );
 }
 
 sub get_asset_folder_config {
 	my ( $self, $config_path ) = @_;
-	$config_path ||= $self->abs_path( $self->suite_root() . '/current_config.perl' );
+	$config_path ||= $self->abs_path( $self->suite_root() . '/config/config.perl' );
 
 	die "Config [$config_path] not found" unless $self->is_a_file( $config_path );
 	my $folder_config = $self->config_file( $config_path );
 	for my $key (
 		qw/
 		root_path
-		source_wanted_path
-		production_part_path
 		chitubox_controller_root
 		/
 	  )
 	{
 		die "required key $key missing" unless ( $folder_config->{$key} );
+	}
+	for my $key (
+		qw/
+
+		all wanted modify modified parts plates backups
+		/
+	  )
+	{
+		die "required configured folder [$key] missing" unless ( $folder_config->{folders}->{$key} );
 	}
 
 	return $folder_config;
@@ -137,12 +151,8 @@ sub generate_folder_config {
 	die "target directory not set" unless $target_directory;
 	$target_directory = $self->abs_path( $target_directory );
 	my $fc = $self->folder_config();
-	$fc->{master_folder}   = "$target_directory/production_automation";
-	$fc->{sources_path}    = "$fc->{master_folder}/source";
-	$fc->{production_path} = "$fc->{master_folder}/production";
-	$fc->{master_folder}   =~ s|//|/|g;
-	$fc->{sources_path}    =~ s|//|/|g;
-	$fc->{production_path} =~ s|//|/|g;
+	$fc->{master_folder} = "$target_directory/production_automation";
+	$fc->{master_folder} =~ s|//|/|g;
 
 	( undef, $fc->{target_directory_parent} ) = $self->file_parse( $target_directory );
 	$self->folder_config( $fc );
@@ -161,45 +171,28 @@ sub load_fdb {
 sub init_folder_config {
 	my ( $self ) = @_;
 	my $fc = $self->folder_config();
-
 	unless ( -d $fc->{master_folder} ) {
 		mkdir( $fc->{master_folder} );
 	}
+	my $counter = 1;
+	for my $folder (
+		qw/
+		all
+		wanted
+		modify
+		modified
+		parts
+		wanted_parts
+		plates
+		backups
+		/
+	  )
+	{
 
-	unless ( -d $fc->{master_folder} ) {
-		mkdir( $fc->{master_folder} );
+		$self->make_dirs( $fc->{master_folder}, ["$counter\_$folder"] );
+		$fc->{folders}->{$folder} = "$fc->{master_folder}/$counter\_$folder";
+		$counter++;
 	}
 
-	SOURCES: {
-		unless ( -d $fc->{sources_path} ) {
-			mkdir( $fc->{sources_path} );
-			$self->make_dirs(
-				$fc->{sources_path},
-				[
-					qw/
-					  all
-					  wanted
-					  to_modify
-					  modified
-					  /
-				]
-			);
-		}
-	}
-	CHITUBOX: {
-		unless ( -d $fc->{production_path} ) {
-			mkdir( $fc->{production_path} );
-			$self->make_dirs(
-				$fc->{production_path},
-				[
-					qw/
-					  parts
-					  plates
-					  backups
-					  /
-				]
-			);
-		}
-	}
 }
 1;

@@ -3,9 +3,9 @@
 use strict;
 use warnings;
 use Data::Dumper;
-our $VERSION = 'v0.0.5';
+our $VERSION = 'v0.0.6';
 
-##~ DIGEST : f90b616a369eeacd492da3f60c971bb0
+##~ DIGEST : 515cfc119e8435299aca653ee28d63d1
 
 use strict;
 use warnings;
@@ -141,8 +141,8 @@ sub main {
 	$self->project_config( $project_config );
 
 	#get all assets in the wanted directory
-	print "Processing [$project_config->{source_wanted_path}]$/";
-	$project_config->{source_wanted_path} =~ s|//|/|g;
+	print "Processing [$project_config->{folders}->{wanted}]$/";
+	$project_config->{folders}->{wanted} =~ s|//|/|g;
 	my @wanted;
 	$self->sub_on_find_files(
 		sub {
@@ -154,7 +154,7 @@ sub main {
 			}
 			return 1;
 		},
-		$project_config->{source_wanted_path},
+		$project_config->{folders}->{wanted},
 	);
 	while ( @wanted ) {
 		$self->load_work( \@wanted );

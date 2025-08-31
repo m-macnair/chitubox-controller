@@ -3,8 +3,8 @@
 use strict;
 use warnings;
 use Data::Dumper;
-our $VERSION = 'v0.0.6';
-##~ DIGEST : 2f0d2114327ac93c98c5026b0101904a
+our $VERSION = 'v0.0.7';
+##~ DIGEST : 9c5c047d05776c70c3e2fb4a0ed844bc
 
 package Obj;
 use Moo;
@@ -31,7 +31,7 @@ sub process_file {
 				file_id => $file_id
 			}
 		);
-		my $part_path = $self->folder_config()->{production_part_path} . "/$nname$suffix";
+		my $part_path = $self->folder_config()->{folders}->{parts} . "/$nname$suffix";
 
 		unless ( $self->is_a_file( $part_path ) ) {
 			symlink( $file, $part_path ) or die "failed to link [$file] to [$part_path]: $!";

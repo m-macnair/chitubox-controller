@@ -1,3 +1,6 @@
 Mark object as fragile 
 	Specifically for resin selection
 Improve layout algo 
+
+
+import the same thing x times in a line 

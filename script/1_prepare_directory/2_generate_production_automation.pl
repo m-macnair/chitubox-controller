@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # ABSTRACT: add standard folders to a directory, create soft links for stls to original_files, and soft link everything inside into soft_links
-our $VERSION = 'v1.0.5';
+our $VERSION = 'v1.0.7';
 
-##~ DIGEST : 875bbbd62cba43d4bb24fca3b5352eb8
+##~ DIGEST : 72d2690931a82397f58f31ad8fdefbf2
 
 use strict;
 use warnings;
@@ -16,6 +16,9 @@ use Data::Dumper;
 sub process {
 	my ( $self, $target_directory ) = @_;
 
+	my $current_config = $self->suite_root() . '/current_config.perl';
+
+	$self->Log( "Generating folder configuration" );
 	my $fc = $self->generate_folder_config( $target_directory );
 	$self->init_folder_config();
 	GETROOT: {
@@ -24,6 +27,7 @@ sub process {
 	}
 
 	# 	die Dumper($fc);
+	$self->Log( "Setting up portable database" );
 	my $fdb = $self->load_fdb();
 
 	#make softlinks in the production_automation directory for each useful file
@@ -40,7 +44,9 @@ sub process {
 					return 1;
 				}
 				my ( $name, $dir, $suffix ) = $self->file_parse( $full_path );
-				if ( any { $_ eq lc( $suffix ) } qw/ .stl .obj .chitubox/ ) {
+
+				#At this point, pre-supported .chitubox files are more trouble than they are worth and should be added only on purpose
+				if ( any { $_ eq lc( $suffix ) } qw/ .stl .obj/ ) {
 					push( @source_files, $full_path );
 				}
 				return 1;
@@ -51,7 +57,7 @@ sub process {
 
 	SETUPSOFTLINKS: {
 		my @links;
-		my $parent_stack = '../../../'; # relative path to the production_automation directory
+		my $parent_stack = '../../'; # relative path to the production_automation directory
 		for my $full_path ( sort( @source_files ) ) {
 			my $file_id = $fdb->get_file_id( $full_path );
 
@@ -62,17 +68,19 @@ sub process {
 			my $partial_path = $full_path;
 			$partial_path =~ s|$fc->{target_directory_parent}||;
 			if ( lc( $suffix ) eq '.chitubox' ) {
-				push( @links, [ $full_path, "$fc->{production_path}/parts/$name$suffix" ] );
 
-				my $new_path = $self->get_safe_path( "$fc->{production_path}/parts/$original_file_row->{id} - $name$suffix" );
+				#???
+				#push( @links, [ $full_path, "$fc->{production_path}/parts/$name$suffix" ] );
+
+				my $new_path = $self->get_safe_path( "$fc->{folders}->{parts}/$name$suffix" );
 				push( @links, [ "$parent_stack$partial_path", $new_path ] );
 			} else {
-				my $new_path = $self->get_safe_path( "$fc->{sources_path}/all/$original_file_row->{id} - $name$suffix" );
+				my $new_path = $self->get_safe_path( "$fc->{folders}->{all}/$name$suffix" );
 				push( @links, [ "$parent_stack$partial_path", $new_path ] );
-				$new_path = $self->get_safe_path( "$fc->{sources_path}/wanted/$original_file_row->{id} - $name$suffix" );
+				$new_path = $self->get_safe_path( "$fc->{folders}->{wanted}/$name$suffix" );
 				push( @links, [ "$parent_stack$partial_path", $new_path ] );
 			}
-			print "Processed $full_path [$file_id]$/";
+			$self->Log( "Processed [$full_path]" );
 		}
 
 		for my $pair ( @links ) {
@@ -87,9 +95,7 @@ sub process {
 			my $def = {
 				master_folder            => $self->abs_path( $fc->{master_folder} ),
 				root_path                => $self->abs_path( "$fc->{master_folder}/../" ),
-				source_wanted_path       => "$fc->{sources_path}/wanted",
-				production_part_path     => "$fc->{production_path}/parts",
-				production_backup_path   => "$fc->{production_path}/backups",
+				folders                  => $fc->{folders},
 				chitubox_controller_root => $self->abs_path( $fc->{chitubox_controller_root} )
 			};
 			my $string = Dumper( $def );
@@ -99,9 +105,11 @@ sub process {
 			close( $of );
 		}
 	}
-	my $current_config = $self->suite_root() . '/current_config.perl';
+	$current_config = $self->suite_root() . '/current_config.perl';
+
 	unlink( $current_config ) if -e $current_config;
 	symlink( $project_config, $current_config );
+	print "$/It is done. Move on.$/";
 }
 
 1;
@@ -114,7 +122,7 @@ sub main {
 	my $self             = Obj->new();
 	my $target_directory = join( ' ', @_ );
 	die "path not provided" unless $target_directory;
-	print "$/processing [$target_directory]$/";
+	$self->Log( "processing [$target_directory]" );
 	die "path invalid" unless -d $target_directory;
 	$self->process( $target_directory );
 	$self->play_sound();

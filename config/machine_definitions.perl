@@ -65,16 +65,32 @@ return {
 
 	'm3' => {
 		id          => 'm3',
-		x_dimension => 184,
-		y_dimension => 112,
+		x_dimension => 125,
+		y_dimension => 98,
 		margin      => $default_margin,
 
 		# 			menu_y_position => 495,
 		menu_y_position => get_menu_position_coord( 3 ),
-		save_offset => [ 0, 55 ], #offset for the save dialogue button due to other options
+# 		save_offset => [ 0, 55 ], #offset for the save dialogue button due to other options
 
 		#x_offset => 1.5, y_offset => .2
 	},
+	
+	'm9' => {
+		id          => 'm9',
+		x_dimension => 188,
+		y_dimension => 116,
+		margin      => $default_margin,
+
+		# 			menu_y_position => 495,
+		menu_y_position => get_menu_position_coord( 5 ),
+# 		save_offset => [ 0, 55 ], #offset for the save dialogue button due to other options - for network attached printers
+
+		x_offset => 1,
+		y_offset => -1
+	},
+	
+	
 
 	'm8' => {	
 		id          => 'm8',
@@ -113,25 +129,12 @@ return {
 
 		# 			menu_y_position => 495,
 		menu_y_position => get_menu_position_coord( 9 ),
-		save_offset => [ 0, 55 ], #offset for the save dialogue button due to other options - for network attached printers
+# 		save_offset => [ 0, 55 ], #offset for the save dialogue button due to other options - for network attached printers
 
 		x_offset => 1,
 		y_offset => -1
 	},
 
-	'm9' => {
-		id          => 'm9',
-		x_dimension => 188,
-		y_dimension => 116,
-		margin      => $default_margin,
-
-		# 			menu_y_position => 495,
-		menu_y_position => get_menu_position_coord( 7 ),
-		save_offset => [ 0, 55 ], #offset for the save dialogue button due to other options - for network attached printers
-
-		x_offset => 1,
-		y_offset => -1
-	},
 
 	
 	

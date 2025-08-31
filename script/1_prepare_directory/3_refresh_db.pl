@@ -3,9 +3,9 @@
 use strict;
 use warnings;
 use Data::Dumper;
-our $VERSION = 'v0.0.8';
+our $VERSION = 'v0.0.10';
 
-##~ DIGEST : aa4036bbc4707df0cc53f17991ee6b2b
+##~ DIGEST : 449a1b87aff9e059493da75455b86934
 
 use strict;
 use warnings;
@@ -35,13 +35,14 @@ sub refresh_wanted_file {
 	$fdb->query( "delete from wanted_file" );
 	$fdb->query( "delete from source_to_part" );
 
-	# 	die "$folder_config->{sources_path}/wanted/";
+	# 		die "$folder_config->{folders}->{wanted}/wanted/";
+	#TODO: Rework so that the wanted directory is authoratative even if the file names have changed
 	$self->sub_on_directory_files(
 		sub {
-			my ( $full_path ) = @_;
+			my ( $full_path, $file, $directory ) = @_;
 
 			my $file_id = $fdb->get_file_id( $full_path );
-
+			$self->Log( "$full_path : $file_id" );
 			$fdb->insert(
 				'wanted_file',
 				{
@@ -50,7 +51,7 @@ sub refresh_wanted_file {
 			);
 
 			my $nname       = $fdb->get_numbered_name( $file_id );
-			my $part_path   = "$folder_config->{production_part_path}/$nname.chitubox";
+			my $part_path   = "$folder_config->{folders}->{parts}/$nname.chitubox";
 			my $fdb_file_id = $fdb->get_file_id( $part_path );
 			if ( -e $part_path ) {
 				$fdb->insert(
@@ -64,7 +65,7 @@ sub refresh_wanted_file {
 
 			return 1;
 		},
-		$folder_config->{source_wanted_path}
+		$folder_config->{folders}->{wanted}
 	);
 
 }
@@ -80,6 +81,7 @@ sub main {
 	my ( $config_path ) = @_;
 
 	my $self = Obj->new();
+	$self->_setup();
 	$self->script_setup();
 
 	#TODO separate script

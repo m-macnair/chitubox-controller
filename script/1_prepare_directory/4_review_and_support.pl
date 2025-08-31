@@ -3,9 +3,9 @@
 use strict;
 use warnings;
 use Data::Dumper;
-our $VERSION = 'v0.0.8';
+our $VERSION = 'v0.0.10';
 
-##~ DIGEST : 291380782444ea36e1c9eb3b08c6fb48
+##~ DIGEST : dd01e3777ff2dc0cb97cc86e3153c5ff
 
 use strict;
 use warnings;
@@ -26,11 +26,12 @@ use Data::Dumper;
 
 sub process {
 	my ( $self ) = @_;
+
 	my $folder_config = $self->folder_config();
 
 	my $file_id_stack = $self->get_more_files();
 	unless ( @$file_id_stack ) {
-		print "Nothing left to do$/";
+		$self->Log( "Nothing left to do" );
 		return;
 	}
 	$self->set_select_all_off;
@@ -39,13 +40,20 @@ sub process {
 
 	do {
 		my $file_id_stack = $self->get_more_files();
-		return unless $file_id_stack;
-		for my $file_id ( @{$file_id_stack} ) {
-			my ( $file, $suffix ) = $self->fdb()->get_numbered_name( $file_id );
-
-			# 		die $file;
-			$self->open_file( "$folder_config->{source_wanted_path}/$file$suffix" );
+		unless ( @{$file_id_stack} ) {
+			$self->Log( "Nothing left to do" );
+			return;
 		}
+
+		my @file_stack;
+		for my $file_id ( @{$file_id_stack} ) {
+			my ( $file, $suffix ) = $self->fdb()->get_file_path_from_id( $file_id );
+
+			push( @file_stack, $file );
+		}
+
+		$self->open_multiple_files( \@file_stack );
+
 		$self->play_sound();
 
 		INTERACT1: {
@@ -53,9 +61,7 @@ sub process {
 			my $res = <STDIN>;
 			chomp( $res );
 			unless ( lc( $res ) eq 'n' ) {
-				unless ( $self->if_colour_name_at_named( 'select_all_on', 'select_all' ) ) {
-					$self->click_to( 'select_all' );
-				}
+				$self->set_select_all_on();
 				sleep( 1 );
 				$self->auto_supports();
 			}
@@ -67,20 +73,27 @@ sub process {
 			}
 
 			BACKUP: {
-				if ( -d $folder_config->{production_backup_path} ) {
+				#This never worked until now lol
+				my $backup_dir = $self->config()->{folders}->{backups};
+				if ( -d $backup_dir ) {
 
 					#Do a backup unless there's only one file in play
-					$self->export_file_all( "$folder_config->{production_backup_path}/" . time . '.chitubox' ) unless scalar( @$file_id_stack ) == 1;
+					my $backup_path = "$backup_dir/" . time . '.chitubox';
+					$self->Log( "Saving full plate backup to $backup_path" );
+					$self->export_file_all( $backup_path ) unless scalar( @$file_id_stack ) == 1;
 				} else {
-					print "!!!!Cannot create backup, folder [$folder_config->{production_backup_path}] is missing$/";
+					$self->Log( "!!!!Cannot create backup, folder [$backup_dir] is missing$/" );
 				}
 			}
 
 			for my $file_id ( @$file_id_stack ) {
+
+				# TODO - rework so that file sequencing for supported parts is [SP-#][F-#]<filename>
+				$self->set_select_all_off();
 				my $nname = $self->fdb()->get_numbered_name( $file_id );
 
-				my $new_path = "$folder_config->{production_part_path}/$nname.chitubox";
-				print "Exporting [$file_id] to [$new_path]";
+				my $new_path = "$folder_config->{folders}->{parts}/$nname.chitubox";
+				$self->Log( "Exporting [$file_id] to [$new_path]" );
 				$self->center_export_first_file( $new_path );
 
 				my $dim = $self->get_current_dimensions( $new_path );
@@ -109,6 +122,7 @@ sub process {
 
 				$self->click_to( 'delete_object' );
 			}
+			$self->clear_dynamic_sleep();
 		}
 	} while ( 1 );
 }
@@ -117,9 +131,9 @@ sub process {
 sub get_more_files {
 	my ( $self ) = @_;
 
-	#5 seems to be a good limit due to non-size based delays
+	#10 should be considered both the maximum and the optimal - the scroll bar is added otherwise which messes with things
 	my $limit          = 10;
-	my $size_limit     = 1024 * 1024 * 150;
+	my $size_limit     = 1024 * 1024 * 250;
 	my $combined_sizes = 0;
 	my @return;
 	my $sth = $self->fdb()->query( "
@@ -138,19 +152,19 @@ sub get_more_files {
 
 	while ( my $row = $sth->fetchrow_hashref() ) {
 		my $path = $self->fdb()->get_file_path_from_id( $row->{id} );
-		print "analysing [$path]$/";
+		$self->Log( "analysing [$path]" );
 		my @stat = stat $path;
 		$combined_sizes += $stat[7];
 		push( @return, $row->{id} );
 
 		#enough items or likely to cause problems with file size
 		if ( scalar( @return ) + 1 > $limit ) {
-			print "Resetting on part limit$/";
+			$self->Log( "Resetting on part limit" );
 			return \@return;
 		}
 
 		if ( $combined_sizes >= $size_limit ) {
-			print "Resetting on combined_sizes : $combined_sizes$/";
+			$self->Log( "Resetting on combined_sizes : $combined_sizes" );
 			return \@return;
 		}
 	}
@@ -169,6 +183,7 @@ sub main {
 
 	my $self = Obj->new();
 	$self->_setup();
+
 	$self->script_setup();
 
 	$self->process();
